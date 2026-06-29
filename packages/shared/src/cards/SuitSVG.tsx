@@ -7,35 +7,75 @@ interface SuitSVGProps {
   color?: string;
 }
 
-const suitPaths: Record<Suit, string> = {
-  hearts:
-    'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z',
-  diamonds:
-    'M12 2L2 12l10 10 10-10L12 2z',
-  clubs:
-    'M12 2C9.24 2 7 4.24 7 7c0 1.52.68 2.87 1.75 3.79C7.56 11.63 6 13.47 6 15.5 6 18.26 8.24 20 11 20h2c2.76 0 5-1.74 5-4.5 0-2.03-1.56-3.87-2.75-4.71C16.32 9.87 17 8.52 17 7c0-2.76-2.24-5-5-5z',
-  spades:
-    'M12 2C9 7 4 10 4 14c0 3.31 2.69 6 6 6h4c3.31 0 6-2.69 6-6 0-4-5-7-8-12zm-1 18h2v3h-1v-1h-1v1h-1v-3z',
-};
-
 const suitColors: Record<Suit, string> = {
   hearts: '#dc2626',
   diamonds: '#dc2626',
-  clubs: '#1f2937',
-  spades: '#1f2937',
+  clubs: '#1a1a2e',
+  spades: '#1a1a2e',
+};
+
+/**
+ * Proper playing card suit icons built with SVG primitives.
+ * viewBox 0 0 100 100 for consistent scaling.
+ */
+function HeartSVG({ fill }: { fill: string }) {
+  return (
+    <svg viewBox="0 0 100 100" fill={fill}>
+      <path
+        d="M50 90 C25 65, 2 50, 2 30 C2 14, 14 2, 30 2 C40 2, 48 8, 50 18 C52 8, 60 2, 70 2 C86 2, 98 14, 98 30 C98 50, 75 65, 50 90Z"
+        fillRule="evenodd"
+      />
+    </svg>
+  );
+}
+
+function DiamondSVG({ fill }: { fill: string }) {
+  return (
+    <svg viewBox="0 0 100 100" fill={fill}>
+      <path d="M50 4 L94 50 L50 96 L6 50 Z" />
+    </svg>
+  );
+}
+
+function ClubSVG({ fill }: { fill: string }) {
+  return (
+    <svg viewBox="0 0 100 100" fill={fill}>
+      {/* Three lobes */}
+      <circle cx="50" cy="24" r="20" />
+      <circle cx="28" cy="52" r="20" />
+      <circle cx="72" cy="52" r="20" />
+      {/* Stem */}
+      <rect x="43" y="56" width="14" height="30" rx="2" />
+      {/* Stem base */}
+      <rect x="36" y="82" width="28" height="8" rx="3" />
+    </svg>
+  );
+}
+
+function SpadeSVG({ fill }: { fill: string }) {
+  return (
+    <svg viewBox="0 0 100 100" fill={fill}>
+      {/* Spade body (inverted heart) */}
+      <path d="M50 4 C50 4, 96 50, 96 66 C96 82, 84 92, 70 84 C60 78, 54 68, 54 60 L54 88 L46 88 L46 60 C46 68, 40 78, 30 84 C16 92, 4 82, 4 66 C4 50, 50 4, 50 4Z" />
+      {/* Stem base */}
+      <rect x="36" y="84" width="28" height="8" rx="3" />
+    </svg>
+  );
+}
+
+const suitComponents: Record<Suit, React.ComponentType<{ fill: string }>> = {
+  hearts: HeartSVG,
+  diamonds: DiamondSVG,
+  clubs: ClubSVG,
+  spades: SpadeSVG,
 };
 
 export function SuitSVG({ suit, size = 24, color }: SuitSVGProps) {
   const fill = color ?? suitColors[suit];
+  const Component = suitComponents[suit];
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill={fill}
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path d={suitPaths[suit]} />
-    </svg>
+    <div style={{ width: size, height: size, lineHeight: 0 }}>
+      <Component fill={fill} />
+    </div>
   );
 }
