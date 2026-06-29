@@ -1,0 +1,18 @@
+{
+  "name": "@brotherhood/game-engine",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@brotherhood/shared": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

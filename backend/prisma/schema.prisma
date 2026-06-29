@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  guestId   String?  @unique
+  username  String?
+  createdAt DateTime @default(now())
+  rooms     RoomPlayer[]
+}
+
+model Room {
+  id         String   @id @default(uuid())
+  code       String   @unique
+  gameType   String   @default("twenty-nine")
+  status     String   @default("waiting") // waiting, playing, finished
+  settings   Json     // RoomSettings as JSON
+  hostId     String
+  createdAt  DateTime @default(now())
+  players    RoomPlayer[]
+  spectators Spectator[]
+  matches    Match[]
+}
+
+model RoomPlayer {
+  id       String   @id @default(uuid())
+  roomId   String
+  userId   String
+  seat     Int?     // 0-3 for 29, null = unseated
+  joinedAt DateTime @default(now())
+  room     Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@unique([roomId, seat])
+}
+
+model Spectator {
+  id       String   @id @default(uuid())
+  roomId   String
+  userId   String
+  joinedAt DateTime @default(now())
+  room     Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+}
+
+model Match {
+  id        String    @id @default(uuid())
+  roomId    String
+  state     Json      // Serialized game state
+  events    Json      @default("[]") // Event log (for future event sourcing)
+  status    String    @default("active") // active, completed, cancelled
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  room      Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+}

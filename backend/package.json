@@ -1,0 +1,36 @@
+{
+  "name": "@brotherhood/backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "dotenv -e ../.env -- node scripts/dev.js",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit",
+    "db:migrate": "dotenv -e ../.env -- prisma migrate dev",
+    "db:push": "dotenv -e ../.env -- prisma db push",
+    "db:studio": "dotenv -e ../.env -- prisma studio",
+    "db:generate": "dotenv -e ../.env -- prisma generate"
+  },
+  "dependencies": {
+    "@brotherhood/game-engine": "*",
+    "@brotherhood/shared": "*",
+    "@brotherhood/twenty-nine": "*",
+    "@prisma/client": "^6.9.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^5.1.0",
+    "socket.io": "^4.8.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/uuid": "^10.0.0",
+    "prisma": "^6.9.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "brotherhood-games",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "packages/games/*",
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "clean": "turbo clean",
+    "db:migrate": "dotenv -e .env -- npx prisma migrate dev --schema backend/prisma/schema.prisma",
+    "db:push": "dotenv -e .env -- npx prisma db push --schema backend/prisma/schema.prisma",
+    "db:studio": "dotenv -e .env -- npx prisma studio --schema backend/prisma/schema.prisma",
+    "db:generate": "dotenv -e .env -- npx prisma generate --schema backend/prisma/schema.prisma"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^11.0.0",
+    "turbo": "^2.5.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "npm@10.0.0"
+}
