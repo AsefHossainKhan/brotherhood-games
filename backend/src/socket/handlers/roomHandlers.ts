@@ -44,7 +44,8 @@ export function handleRoomEvents(io: Server, socket: Socket, runtime: GameRuntim
       // Join the socket.io room
       socket.join(room.id);
 
-      socket.emit('ROOM_UPDATED', { room: room.toJSON() });
+      // Broadcast updated room state to ALL players in the room (including joiner)
+      io.to(room.id).emit('ROOM_UPDATED', { room: room.toJSON() });
 
       // Notify others
       socket.to(room.id).emit('PLAYER_JOINED', {

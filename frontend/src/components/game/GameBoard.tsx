@@ -22,7 +22,7 @@ export function GameBoard() {
   const showDoublePanel = phase === 'DOUBLE_PHASE';
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div data-testid="game-board" className="flex min-h-screen flex-col">
       {/* Top bar: scores + status */}
       <div className="flex items-center justify-between border-b border-gray-800 px-4 py-2">
         <ScoreBoard />

@@ -54,7 +54,8 @@ export function handleGameEvents(io: Server, socket: Socket, runtime: GameRuntim
 
       const { room: updatedRoom } = runtime.startGame(room.id, guestId);
 
-      // Notify all players game has started
+      // Notify all players game has started + updated room state
+      io.to(room.id).emit('ROOM_UPDATED', { room: updatedRoom.toJSON() });
       io.to(room.id).emit('GAME_STARTED', { matchId: updatedRoom.matchId });
 
       // Send personalized state to each player (hands are private)

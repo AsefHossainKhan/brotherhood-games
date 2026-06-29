@@ -13,6 +13,8 @@
     "build": "turbo build",
     "lint": "turbo lint",
     "test": "turbo test",
+    "test:e2e": "npx playwright test",
+    "test:e2e:ui": "npx playwright test --ui",
     "clean": "turbo clean",
     "db:migrate": "dotenv -e .env -- npx prisma migrate dev --schema backend/prisma/schema.prisma",
     "db:push": "dotenv -e .env -- npx prisma db push --schema backend/prisma/schema.prisma",
@@ -20,6 +22,7 @@
     "db:generate": "dotenv -e .env -- npx prisma generate --schema backend/prisma/schema.prisma"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@vitest/coverage-v8": "^3.2.6",
     "dotenv-cli": "^11.0.0",
     "turbo": "^2.5.0",

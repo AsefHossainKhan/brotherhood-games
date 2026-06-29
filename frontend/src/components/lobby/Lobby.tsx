@@ -43,7 +43,7 @@ export function Lobby() {
         <div className="text-center">
           <h2 className="text-2xl font-bold text-white">Waiting Room</h2>
           <div className="mt-3 flex items-center justify-center gap-3">
-            <span className="rounded-lg bg-gray-800 px-4 py-2 font-mono text-2xl font-bold tracking-widest text-green-400">
+            <span data-testid="room-code" className="rounded-lg bg-gray-800 px-4 py-2 font-mono text-2xl font-bold tracking-widest text-green-400">
               {roomCode}
             </span>
             <button
@@ -146,6 +146,7 @@ export function Lobby() {
           <div className="flex justify-center">
             <button
               onClick={handleSwitchTeam}
+              data-testid="switch-team-btn"
               className="rounded-lg border border-gray-600 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800 transition-colors"
             >
               Switch to {myTeam === 0 ? 'Team B' : 'Team A'}
@@ -176,6 +177,7 @@ export function Lobby() {
         <div className="flex gap-3">
           <button
             onClick={leaveRoom}
+            data-testid="leave-room-btn"
             className="flex-1 rounded-lg border border-gray-700 px-4 py-3 text-gray-400 hover:bg-gray-800 transition-colors"
           >
             Leave
@@ -183,6 +185,7 @@ export function Lobby() {
           {isHost && (
             <button
               onClick={startGame}
+              data-testid="start-game-btn"
               disabled={!canStart}
               className="flex-1 rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
