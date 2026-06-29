@@ -6,7 +6,8 @@
     "dev": "dotenv -e ../.env -- node scripts/dev.js",
     "build": "dotenv -e ../.env -- next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest run"
   },
   "dependencies": {
     "@brotherhood/shared": "*",
@@ -24,6 +25,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@types/uuid": "^10.0.0",
+    "jsdom": "^29.1.1",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.7.0"
   }

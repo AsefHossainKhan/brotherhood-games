@@ -134,6 +134,33 @@ This starts:
 | `npm run start` | Run production build |
 | `npm run lint` | Run Next.js lint |
 
+### Testing
+
+Unit tests use [Vitest](https://vitest.dev/) across all packages.
+
+```bash
+# Run all tests via Turborepo
+npm run test
+
+# Run tests for a specific package
+cd packages/games/twenty-nine && npm test
+cd packages/shared && npm test
+
+# Watch mode (from any package directory)
+npx vitest
+
+# Run with coverage
+npx vitest run --coverage
+```
+
+| Package | Test files | Coverage |
+|---------|-----------|----------|
+| `@brotherhood/shared` | `src/cards/utils.test.ts` | Card utilities, deck builders, sorting |
+| `@brotherhood/twenty-nine` | `src/logic/*.test.ts` | Deck, tricks, scoring, marriage, trump, dealing |
+| `@brotherhood/backend` | _(coming soon)_ | — |
+| `@brotherhood/frontend` | _(coming soon)_ | — |
+| `@brotherhood/game-engine` | _(coming soon)_ | — |
+
 ### Individual Packages (run from `packages/`)
 
 ```bash
