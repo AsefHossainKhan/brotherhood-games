@@ -122,21 +122,30 @@ export function calculateMatchPoints(
 
 /**
  * Check if a set has been completed (cumulative score reaches threshold).
+ *
+ * A set is completed when either team's match points reach ±threshold.
+ * If Team 0 reaches +threshold, Team 0 wins the set.
+ * If Team 0 reaches -threshold, Team 1 wins the set.
+ * If Team 1 reaches +threshold, Team 1 wins the set.
+ * If Team 1 reaches -threshold, Team 0 wins the set.
  */
 export function checkSetCompletion(
   cumulativeScores: [number, number],
   threshold: number
 ): { setCompleted: boolean; winner: 0 | 1 | null } {
+  // Team 0 reaches +threshold → Team 0 wins
   if (cumulativeScores[0] >= threshold) {
     return { setCompleted: true, winner: 0 };
   }
-  if (cumulativeScores[1] >= -threshold) {
-    return { setCompleted: true, winner: 1 };
-  }
-  // Check negative threshold too
+  // Team 0 reaches -threshold → Team 1 wins
   if (cumulativeScores[0] <= -threshold) {
     return { setCompleted: true, winner: 1 };
   }
+  // Team 1 reaches +threshold → Team 1 wins
+  if (cumulativeScores[1] >= threshold) {
+    return { setCompleted: true, winner: 1 };
+  }
+  // Team 1 reaches -threshold → Team 0 wins
   if (cumulativeScores[1] <= -threshold) {
     return { setCompleted: true, winner: 0 };
   }
@@ -145,21 +154,106 @@ export function checkSetCompletion(
 }
 
 /**
+ * Calculate bonus points for special scenarios.
+ *
+ * - All 8 tricks: +1 bonus point for the team that won all tricks
+ * - Zero tricks (opponent's bid): -1 bonus for the team that won 0 tricks
+ *   (Only applies when the opponent was the declarer and got zero tricks)
+ *
+ * @param tricksWonPerTeam [team0TricksWon, team1TricksWon]
+ * @param declarerTeam Which team was the declarer
+ * @returns [team0Bonus, team1Bonus]
+ */
+export function calculateBonusPoints(
+  tricksWonPerTeam: [number, number],
+  declarerTeam: 0 | 1
+): [number, number] {
+  const bonuses: [number, number] = [0, 0];
+  const totalTricks = tricksWonPerTeam[0] + tricksWonPerTeam[1];
+
+  // All 8 tricks bonus: +1 for the team that won all tricks
+  if (tricksWonPerTeam[0] === totalTricks && totalTricks === 8) {
+    bonuses[0] += 1;
+  }
+  if (tricksWonPerTeam[1] === totalTricks && totalTricks === 8) {
+    bonuses[1] += 1;
+  }
+
+  // Zero tricks penalty: if declarer team got 0 tricks, they get -1
+  // (Opponent gets 0 tricks when it's their bid - rare but possible)
+  if (tricksWonPerTeam[declarerTeam] === 0) {
+    bonuses[declarerTeam] -= 1;
+  }
+  // If opponent team got 0 tricks (declarer won all), declarer gets +1 bonus
+  const opponentTeam = declarerTeam === 0 ? 1 : 0;
+  if (tricksWonPerTeam[opponentTeam] === 0) {
+    // This is already covered by the all-tricks bonus above
+    // But if we want to explicitly give +1 for opponent getting 0:
+    // bonuses[declarerTeam] += 1; // Already handled by all-tricks
+  }
+
+  return bonuses;
+}
+
+/**
+ * Calculate the number of tricks won by each team.
+ */
+export function calculateTricksWonPerTeam(
+  completedTricks: { winnerId: string }[],
+  teams: Map<string, 0 | 1>
+): [number, number] {
+  const tricksWon: [number, number] = [0, 0];
+
+  for (const trick of completedTricks) {
+    if (!trick.winnerId) continue;
+    const winnerTeam = teams.get(trick.winnerId);
+    if (winnerTeam !== undefined) {
+      tricksWon[winnerTeam]++;
+    }
+  }
+
+  return tricksWon;
+}
+
+/**
  * Update the match score after a game.
+ *
+ * If a set is completed (threshold reached), scores reset to 0,0 and the set winner gets +1 set.
  */
 export function updateScore(
   currentScore: MatchScore,
   teamPoints: [number, number],
   matchPointsResult: [number, number],
-  bidSuccess: boolean
+  bonusPoints: [number, number],
+  bidSuccess: boolean,
+  setThreshold: number
 ): MatchScore {
+  // Calculate new match points
+  const newMatchPoints: [number, number] = [
+    currentScore.matchPoints[0] + matchPointsResult[0] + bonusPoints[0],
+    currentScore.matchPoints[1] + matchPointsResult[1] + bonusPoints[1],
+  ];
+
+  const newSets = [...currentScore.sets] as [number, number];
+
+  // Check if a set has been completed
+  const setResult = checkSetCompletion(newMatchPoints, setThreshold);
+  if (setResult.setCompleted && setResult.winner !== null) {
+    newSets[setResult.winner]++;
+
+    // Reset match points to 0,0 after set completion
+    return {
+      teamPoints,
+      matchPoints: [0, 0],
+      sets: newSets,
+      lastBidResult: bidSuccess ? 'success' : 'fail',
+    };
+  }
+
   return {
     teamPoints,
-    matchPoints: [
-      currentScore.matchPoints[0] + matchPointsResult[0],
-      currentScore.matchPoints[1] + matchPointsResult[1],
-    ],
-    sets: currentScore.sets, // Updated separately after checking set completion
+    matchPoints: newMatchPoints,
+    sets: newSets,
     lastBidResult: bidSuccess ? 'success' : 'fail',
   };
 }

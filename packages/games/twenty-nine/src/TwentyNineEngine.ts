@@ -33,6 +33,8 @@ import {
   calculateMatchPoints,
   updateScore,
   checkSetCompletion,
+  calculateBonusPoints,
+  calculateTricksWonPerTeam,
 } from './logic/scoring';
 import { TWENTY_NINE_DEFAULTS } from './config';
 import { GAME_PHASES } from '@brotherhood/shared';
@@ -141,6 +143,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
         return this.handlePlayCard(newState, action.playerId, action.payload.cardIndex as number, broadcasts);
       case 'REQUEST_TRUMP_REVEAL':
         return this.handleTrumpReveal(newState, action.playerId, broadcasts);
+      case 'START_NEXT_HAND':
+        return this.handleStartNextHand(newState, broadcasts);
       default:
         return { newState, broadcasts, errors: [{ code: 'UNKNOWN_ACTION', message: `Unknown action: ${action.type}` }] };
     }
@@ -172,6 +176,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
         return this.validatePlayCard(state, action.playerId, action.payload.cardIndex as number);
       case 'REQUEST_TRUMP_REVEAL':
         return this.validateTrumpReveal(state, action.playerId);
+      case 'START_NEXT_HAND':
+        return this.validateStartNextHand(state);
       default:
         return { valid: false, error: `Unknown action: ${action.type}` };
     }
@@ -1005,7 +1011,7 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       return { newState: state, broadcasts };
     }
 
-    // Calculate team points
+    // Calculate team points from all tricks
     const teams = new Map<string, 0 | 1>();
     for (const player of state.players) {
       teams.set(player.id, player.team);
@@ -1014,6 +1020,12 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     const completedTricks = state.completedTricks.filter((t) => t.winnerId !== null) as { plays: { playerId: string; card: { suit: string; rank: string } }[]; winnerId: string }[];
     const teamPoints = calculateTeamPoints(completedTricks, teams);
 
+    // Calculate tricks won per team for bonus calculation
+    const tricksWonPerTeam = calculateTricksWonPerTeam(
+      completedTricks as { winnerId: string }[],
+      teams
+    );
+
     // Determine effective bid
     const declarer = state.players.find((p) => p.isDeclarer)!;
     const effectiveBid = state.marriage?.effectiveBid ?? state.bidding.highestBid!;
@@ -1021,31 +1033,39 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     // Check if declarer succeeded
     const bidSuccess = didDeclarerSucceed(teamPoints[declarer.team], effectiveBid);
 
-    // Calculate match points
+    // Calculate base match points
     const matchPointsResult = calculateMatchPoints(
       declarer.team,
       bidSuccess,
       state.double.multiplier
     );
 
-    // Update score
-    state.score = updateScore(state.score, teamPoints, matchPointsResult, bidSuccess);
+    // Calculate bonus points (all tricks, zero tricks)
+    const bonusPoints = calculateBonusPoints(tricksWonPerTeam, declarer.team);
 
-    // Check set completion
-    const setResult = checkSetCompletion(state.score.matchPoints, state.settings.setThreshold);
-    if (setResult.setCompleted && setResult.winner !== null) {
-      state.score.sets[setResult.winner]++;
-    }
+    // Update score with set completion check
+    state.score = updateScore(
+      state.score,
+      teamPoints,
+      matchPointsResult,
+      bonusPoints,
+      bidSuccess,
+      state.settings.setThreshold
+    );
 
     broadcasts.push({
       event: 'SCORE_UPDATED',
       payload: {
-        team1Points: teamPoints[0],
-        team2Points: teamPoints[1],
-        matchPoints: state.double.multiplier,
-        team1Sets: state.score.sets[0],
-        team2Sets: state.score.sets[1],
+        team0Points: teamPoints[0],
+        team1Points: teamPoints[1],
+        team0MatchPoints: state.score.matchPoints[0],
+        team1MatchPoints: state.score.matchPoints[1],
+        team0Sets: state.score.sets[0],
+        team1Sets: state.score.sets[1],
         bidResult: bidSuccess ? 'success' : 'fail',
+        declarerTeam: declarer.team,
+        bonusPoints,
+        effectiveBid,
       },
     });
 
@@ -1055,22 +1075,140 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       state.score.sets[1] >= state.settings.matchLength
     ) {
       state.phase = GAME_PHASES.MATCH_COMPLETE;
-      const winner = state.score.sets[0] >= state.settings.matchLength ? 'team1' : 'team2';
+      const winner = state.score.sets[0] >= state.settings.matchLength ? 0 : 1;
       broadcasts.push({
-        event: 'GAME_FINISHED',
-        payload: { winner, reason: `Team ${winner} won ${state.settings.matchLength} sets` },
+        event: 'MATCH_FINISHED',
+        payload: { winner, reason: `Team ${winner + 1} won ${state.settings.matchLength} sets` },
       });
     } else {
-      // Rotate dealer and start next game
-      state.dealerSeat = (state.dealerSeat + 1) % 4;
-      for (const p of state.players) {
-        p.isDealer = p.seat === state.dealerSeat;
-        p.isDeclarer = false;
-      }
-      state.phase = GAME_PHASES.MATCH_COMPLETE;
+      // Stay in SCORING phase - next hand will be started by START_NEXT_HAND action
+      state.phase = GAME_PHASES.SCORING;
     }
 
     return { newState: state, broadcasts };
+  }
+
+  private handleStartNextHand(
+    state: TwentyNineState,
+    broadcasts: Broadcast[]
+  ): ActionResult<TwentyNineState> {
+    this.prepareNextHand(state, broadcasts);
+    return { newState: state, broadcasts };
+  }
+
+  /**
+   * Prepare state for the next hand:
+   * - Rotate dealer to next player (counter-clockwise)
+   * - Reset bidding, trump, double, tricks, marriage
+   * - Deal new hands
+   * - Start bidding from dealer's next player
+   */
+  private prepareNextHand(
+    state: TwentyNineState,
+    broadcasts: Broadcast[]
+  ): void {
+    // Rotate dealer to next player (counter-clockwise)
+    state.dealerSeat = (state.dealerSeat + 1) % 4;
+
+    // Update dealer flags
+    for (const p of state.players) {
+      p.isDealer = p.seat === state.dealerSeat;
+      p.isDeclarer = false;
+    }
+
+    // Reset bidding
+    state.bidding = {
+      currentBid: null,
+      currentBidder: null,
+      highestBid: null,
+      highestBidder: null,
+      bids: [],
+      passCount: 0,
+    };
+
+    // Reset trump
+    state.trump = {
+      type: null,
+      suit: null,
+      isRevealed: false,
+      seventhCard: null,
+      revealedBy: null,
+      mustPlayTrump: false,
+    };
+
+    // Reset double
+    state.double = {
+      level: 'normal',
+      calledBy: null,
+      multiplier: 1,
+    };
+
+    // Reset tricks
+    state.completedTricks = [];
+    state.currentTrick = {
+      plays: [],
+      leadSuit: null,
+      winnerId: null,
+      trickNumber: 0,
+    };
+    state.leadSuit = null;
+
+    // Reset marriage
+    state.marriage = null;
+
+    // Reset weak hand
+    state.weakHandPlayer = null;
+    state.weakHandRequested = false;
+
+    // Reset internal tracking
+    state._doublePasses = [];
+
+    // Build and shuffle new deck
+    state.deck = shuffleDeck(buildDeck());
+
+    // Deal first 4 cards
+    const { hands, remaining } = firstDeal(state.deck, 4);
+    state.deck = remaining;
+    state.dealCount = 4;
+
+    for (let i = 0; i < 4; i++) {
+      state.players[i].hand = hands[i];
+    }
+
+    state.phase = GAME_PHASES.FIRST_DEAL;
+
+    // Broadcast new hands
+    for (const player of state.players) {
+      broadcasts.push({
+        event: 'FIRST_DEAL_COMPLETED',
+        payload: { hand: player.hand },
+        targetPlayerIds: [player.id],
+      });
+    }
+
+    broadcasts.push({
+      event: 'NEXT_HAND_STARTED',
+      payload: {
+        dealerId: state.players[state.dealerSeat].id,
+        dealerSeat: state.dealerSeat,
+      },
+    });
+
+    // Check for weak hands
+    for (const player of state.players) {
+      if (canCancelWeakHand(player.hand)) {
+        state.weakHandPlayer = player.id;
+        broadcasts.push({
+          event: 'WEAK_HAND_DETECTED',
+          payload: { playerId: player.id },
+          targetPlayerIds: [player.id],
+        });
+        return;
+      }
+    }
+
+    // No weak hand — proceed to bidding
+    this.startBidding(state, broadcasts);
   }
 
   // ---- Validation Helpers ----
@@ -1156,6 +1294,11 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     if (hasLedSuit) return { valid: false, error: 'Must follow suit - cannot reveal' };
     // Player must have at least one trump card to make reveal meaningful (optional but logical)
     if (!state.trump.suit) return { valid: false, error: 'No trump suit set' };
+    return { valid: true };
+  }
+
+  private validateStartNextHand(state: TwentyNineState): { valid: boolean; error?: string } {
+    if (state.phase !== GAME_PHASES.SCORING) return { valid: false, error: 'Can only start next hand after scoring' };
     return { valid: true };
   }
 

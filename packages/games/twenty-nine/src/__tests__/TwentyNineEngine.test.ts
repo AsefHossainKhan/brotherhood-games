@@ -869,7 +869,9 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       // Each trick: p0 leads hearts, others follow with non-trump
       // p0 wins every trick → team 0 gets all 28 points
       // Bid was 16 → team 0 succeeds → +1 match point for team 0
-      expect(s.score.matchPoints[0]).toBe(1);
+      // Plus +1 bonus for winning all 8 tricks → team 0 total = 2
+      // Team 1 gets -1 for bid failure (no bonus since they didn't bid)
+      expect(s.score.matchPoints[0]).toBe(2);
       expect(s.score.matchPoints[1]).toBe(-1);
       expect(s.score.lastBidResult).toBe('success');
     });
@@ -1335,6 +1337,12 @@ describe('TwentyNineEngine — Full Game Flow', () => {
         }
       }
 
+      // After scoring, phase should be SCORING
+      expect(s.phase).toBe(GAME_PHASES.SCORING);
+
+      // Start next hand to rotate dealer
+      s = engine.handleAction(s, action('START_NEXT_HAND', 'p0')).newState;
+
       // Dealer should have rotated
       expect(s.dealerSeat).toBe((oldDealerSeat + 1) % 4);
     });
@@ -1361,6 +1369,9 @@ describe('TwentyNineEngine — Full Game Flow', () => {
           s = playFirstValidCard(engine, s);
         }
       }
+
+      // Start next hand to reset declarer flags
+      s = engine.handleAction(s, action('START_NEXT_HAND', 'p0')).newState;
 
       // All declarer flags should be reset
       for (const p of s.players) {

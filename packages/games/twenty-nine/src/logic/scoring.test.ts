@@ -4,6 +4,11 @@ import {
   canDeclareDouble,
   calculateTeamPoints,
   didDeclarerSucceed,
+  calculateMatchPoints,
+  calculateBonusPoints,
+  calculateTricksWonPerTeam,
+  checkSetCompletion,
+  updateScore,
 } from './scoring';
 import type { DoubleLevel, MatchScore } from '../types';
 import type { Card, Suit } from '@brotherhood/shared';
@@ -144,5 +149,198 @@ describe('didDeclarerSucceed', () => {
   it('edge case: exactly at minimum bid (16)', () => {
     expect(didDeclarerSucceed(16, 16)).toBe(true);
     expect(didDeclarerSucceed(15, 16)).toBe(false);
+  });
+});
+
+describe('calculateMatchPoints', () => {
+  it('declarer succeeds: declarer team gets +multiplier, opponents get -multiplier', () => {
+    const result = calculateMatchPoints(0, true, 1);
+    expect(result).toEqual([1, -1]);
+  });
+
+  it('declarer fails: declarer team gets -multiplier, opponents get +multiplier', () => {
+    const result = calculateMatchPoints(0, false, 1);
+    expect(result).toEqual([-1, 1]);
+  });
+
+  it('with double multiplier', () => {
+    const result = calculateMatchPoints(1, true, 2);
+    expect(result).toEqual([-2, 2]);
+  });
+});
+
+describe('calculateBonusPoints', () => {
+  const teams = new Map<string, 0 | 1>([
+    ['p1', 0],
+    ['p2', 1],
+    ['p3', 0],
+    ['p4', 1],
+  ]);
+
+  it('should give +1 bonus for winning all 8 tricks', () => {
+    const tricksWon: [number, number] = [8, 0];
+    const result = calculateBonusPoints(tricksWon, 0);
+    expect(result).toEqual([1, 0]);
+  });
+
+  it('should give +1 bonus to team 1 for winning all 8 tricks', () => {
+    const tricksWon: [number, number] = [0, 8];
+    const result = calculateBonusPoints(tricksWon, 1);
+    expect(result).toEqual([0, 1]);
+  });
+
+  it('should give -1 bonus to declarer team for winning 0 tricks', () => {
+    const tricksWon: [number, number] = [0, 8];
+    const result = calculateBonusPoints(tricksWon, 0);
+    expect(result).toEqual([-1, 1]);
+  });
+
+  it('should give -1 bonus to opponent team if they bid and got 0 tricks', () => {
+    const tricksWon: [number, number] = [8, 0];
+    const result = calculateBonusPoints(tricksWon, 1);
+    expect(result).toEqual([1, -1]);
+  });
+
+  it('no bonus for split tricks', () => {
+    const tricksWon: [number, number] = [4, 4];
+    const result = calculateBonusPoints(tricksWon, 0);
+    expect(result).toEqual([0, 0]);
+  });
+});
+
+describe('calculateTricksWonPerTeam', () => {
+  const teams = new Map<string, 0 | 1>([
+    ['p1', 0],
+    ['p2', 1],
+    ['p3', 0],
+    ['p4', 1],
+  ]);
+
+  it('should count tricks won by each team', () => {
+    const tricks = [
+      { winnerId: 'p1' },
+      { winnerId: 'p2' },
+      { winnerId: 'p1' },
+      { winnerId: 'p3' },
+      { winnerId: 'p2' },
+      { winnerId: 'p1' },
+      { winnerId: 'p4' },
+      { winnerId: 'p2' },
+    ];
+    const result = calculateTricksWonPerTeam(tricks, teams);
+    expect(result).toEqual([4, 4]);
+  });
+
+  it('should handle all tricks won by one team', () => {
+    const tricks = Array(8).fill({ winnerId: 'p1' });
+    const result = calculateTricksWonPerTeam(tricks, teams);
+    expect(result).toEqual([8, 0]);
+  });
+});
+
+describe('checkSetCompletion', () => {
+  it('team 0 reaches +threshold', () => {
+    const result = checkSetCompletion([6, 0], 6);
+    expect(result).toEqual({ setCompleted: true, winner: 0 });
+  });
+
+  it('team 0 reaches -threshold', () => {
+    const result = checkSetCompletion([-6, 0], 6);
+    expect(result).toEqual({ setCompleted: true, winner: 1 });
+  });
+
+  it('team 1 reaches +threshold', () => {
+    const result = checkSetCompletion([0, 6], 6);
+    expect(result).toEqual({ setCompleted: true, winner: 1 });
+  });
+
+  it('team 1 reaches -threshold', () => {
+    const result = checkSetCompletion([0, -6], 6);
+    expect(result).toEqual({ setCompleted: true, winner: 0 });
+  });
+
+  it('no set completed', () => {
+    const result = checkSetCompletion([3, 2], 6);
+    expect(result).toEqual({ setCompleted: false, winner: null });
+  });
+
+  it('exactly at threshold', () => {
+    const result = checkSetCompletion([6, 0], 6);
+    expect(result.setCompleted).toBe(true);
+  });
+
+  it('beyond threshold', () => {
+    const result = checkSetCompletion([8, 0], 6);
+    expect(result.setCompleted).toBe(true);
+  });
+});
+
+describe('updateScore', () => {
+  const currentScore: MatchScore = {
+    teamPoints: [0, 0],
+    matchPoints: [0, 0],
+    sets: [0, 0],
+    lastBidResult: null,
+  };
+
+  it('should add match points and bonus points', () => {
+    const result = updateScore(
+      currentScore,
+      [15, 13],
+      [1, -1],
+      [0, 0],
+      true,
+      6
+    );
+    expect(result.matchPoints).toEqual([1, -1]);
+  });
+
+  it('should reset match points after set completion', () => {
+    const scoreWithHighPoints: MatchScore = {
+      ...currentScore,
+      matchPoints: [5, -5],
+    };
+    const result = updateScore(
+      scoreWithHighPoints,
+      [20, 8],
+      [1, -1],
+      [0, 0],
+      true,
+      6
+    );
+    // 5 + 1 = 6, which reaches threshold, so reset to 0,0
+    expect(result.matchPoints).toEqual([0, 0]);
+    expect(result.sets[0]).toBe(1);
+  });
+
+  it('should handle negative threshold', () => {
+    const scoreWithLowPoints: MatchScore = {
+      ...currentScore,
+      matchPoints: [-5, 5],
+    };
+    const result = updateScore(
+      scoreWithLowPoints,
+      [8, 20],
+      [-1, 1],
+      [0, 0],
+      false,
+      6
+    );
+    // -5 + (-1) = -6, which reaches threshold, so reset to 0,0
+    expect(result.matchPoints).toEqual([0, 0]);
+    expect(result.sets[1]).toBe(1);
+  });
+
+  it('should include bonus points in calculation', () => {
+    const result = updateScore(
+      currentScore,
+      [28, 0],
+      [1, -1],
+      [1, -1],
+      true,
+      6
+    );
+    // 0 + 1 + 1 = 2 match points for team 0
+    expect(result.matchPoints).toEqual([2, -2]);
   });
 });
