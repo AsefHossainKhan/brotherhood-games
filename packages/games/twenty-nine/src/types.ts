@@ -4,6 +4,7 @@ import type { Card, Suit, GamePhase, TrumpType } from '@brotherhood/shared';
 
 export interface TwentyNinePlayer {
   id: string;
+  username: string;
   seat: number;
   team: 0 | 1; // 0 or 1
   hand: Card[];
@@ -46,6 +47,7 @@ export interface TrumpInfo {
   isRevealed: boolean;
   seventhCard: Card | null; // the actual seventh card (only for seventh-card mode)
   revealedBy: string | null;
+  mustPlayTrump: boolean; // true only for the turn immediately after reveal
 }
 
 // ---- Double Phase ----

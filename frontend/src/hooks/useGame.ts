@@ -8,11 +8,8 @@ import { useGameStore } from '@/stores/gameStore';
  */
 export function useGame() {
   const socket = useSocketStore((s) => s.socket);
+  const guestId = useSocketStore((s) => s.guestId);
   const game = useGameStore();
-  const guestId =
-    typeof window !== 'undefined'
-      ? localStorage.getItem('brotherhood_guest_id') ?? ''
-      : '';
 
   // Find my player state
   const myPlayer = game.players.find((p) => p.id === guestId);

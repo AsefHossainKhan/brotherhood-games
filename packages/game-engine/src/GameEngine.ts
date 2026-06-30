@@ -53,11 +53,13 @@ export interface GameEngine<TState = unknown> {
    * @param playerIds Player IDs in seat order
    * @param settings Room settings
    * @param teams Team assignments for each player (same order as playerIds)
+   * @param usernames Player usernames (same order as playerIds)
    */
   createInitialState(
     playerIds: string[],
     settings: RoomSettings,
-    teams?: (0 | 1)[]
+    teams?: (0 | 1)[],
+    usernames?: string[]
   ): TState;
 
   /**

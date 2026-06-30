@@ -175,8 +175,14 @@ export class GameRuntime {
       return player?.team ?? 0;
     });
 
+    // Get usernames in the same order as playerIds
+    const usernames: string[] = playerIds.map((pid) => {
+      const player = room.players.get(pid);
+      return player?.username ?? `Player`;
+    });
+
     // Create initial state
-    room.gameState = engine.createInitialState(playerIds, room.settings, teams);
+    room.gameState = engine.createInitialState(playerIds, room.settings, teams, usernames);
     room.status = 'playing';
     room.matchId = crypto.randomUUID();
 

@@ -9,6 +9,7 @@ interface Card {
 
 interface PlayerState {
   id: string;
+  username: string;
   seat: number;
   team: number;
   isDealer: boolean;
@@ -51,6 +52,7 @@ interface TrumpState {
   suit: string | null;
   isRevealed: boolean;
   seventhCard: Card | null;
+  mustPlayTrump: boolean;
 }
 
 interface DoubleState {
@@ -95,6 +97,7 @@ export const useGameStore = create<GameState>((set) => ({
     suit: null,
     isRevealed: false,
     seventhCard: null,
+    mustPlayTrump: false,
   },
   double: {
     level: 'normal',
@@ -151,7 +154,7 @@ export const useGameStore = create<GameState>((set) => ({
         bids: [],
         passCount: 0,
       },
-      trump: { type: null, suit: null, isRevealed: false, seventhCard: null },
+      trump: { type: null, suit: null, isRevealed: false, seventhCard: null, mustPlayTrump: false },
       double: { level: 'normal', calledBy: null, multiplier: 1 },
       currentTrick: { plays: [], leadSuit: null, winnerId: null, trickNumber: 0 },
       completedTricks: [],

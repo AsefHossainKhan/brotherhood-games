@@ -4,7 +4,16 @@ import { CardComponent } from '@brotherhood/shared/cards';
 import { useGame } from '@/hooks/useGame';
 
 export function TableArea() {
-  const { currentTrick, completedTricks } = useGame();
+  const { currentTrick, completedTricks, players } = useGame();
+
+  // Helper to get player name/label
+  const getPlayerLabel = (playerId: string) => {
+    const player = players.find((p) => p.id === playerId);
+    return player ? player.username : '??';
+  };
+
+  // Get the last completed trick for display
+  const lastTrick = completedTricks.length > 0 ? completedTricks[completedTricks.length - 1] : null;
 
   return (
     <div className="flex flex-col items-center gap-4">
@@ -22,7 +31,7 @@ export function TableArea() {
                 height={84}
               />
               <span className="text-xs text-gray-500">
-                Seat {i + 1}
+                {getPlayerLabel(play.playerId)}
               </span>
             </div>
           ))
@@ -34,6 +43,16 @@ export function TableArea() {
           </div>
         )}
       </div>
+
+      {/* Last trick winner */}
+      {lastTrick && lastTrick.winnerId && (
+        <div className="rounded-lg bg-gray-800 px-3 py-1.5">
+          <span className="text-xs text-gray-500">Last trick won by: </span>
+          <span className="text-sm font-medium text-yellow-400">
+            {getPlayerLabel(lastTrick.winnerId)}
+          </span>
+        </div>
+      )}
 
       {/* Trick count */}
       <span className="text-sm text-gray-500">

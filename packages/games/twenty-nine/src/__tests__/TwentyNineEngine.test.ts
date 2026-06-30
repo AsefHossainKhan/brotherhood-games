@@ -102,6 +102,21 @@ function skipDoublePhase(engine: TwentyNineEngine, state: TwentyNineState): Twen
   return s;
 }
 
+/** Complete bidding and trump selection, then advance past second deal to double phase */
+function completeBidding(
+  engine: TwentyNineEngine,
+  state: TwentyNineState,
+  declarerId: string,
+  bid: number,
+  trumpAction?: GameAction
+): TwentyNineState {
+  let s = doBidding(engine, state, PLAYER_IDS.indexOf(declarerId), bid);
+  // Select suit trump by default if not specified
+  const trump = trumpAction ?? action('SELECT_TRUMP', declarerId, { suit: 'hearts' });
+  s = selectTrumpAndDeal(engine, s, trump);
+  return s;
+}
+
 /** Play a card for the current player (first valid card in hand) */
 function playFirstValidCard(
   engine: TwentyNineEngine,
@@ -146,6 +161,7 @@ function createControlledGame(
   // Set up players
   state.players = PLAYER_IDS.map((id, seat) => ({
     id,
+    username: `Player ${seat + 1}`,
     seat,
     team: TEAMS[seat],
     hand: hands[seat],
@@ -171,6 +187,7 @@ function createControlledGame(
     isRevealed: trumpSuit !== null,
     seventhCard: null,
     revealedBy: null,
+    mustPlayTrump: false,
   };
 
   // Set up playing phase
@@ -417,7 +434,7 @@ describe('TwentyNineEngine — Full Game Flow', () => {
 
       expect(s.trump.type).toBe('suit');
       expect(s.trump.suit).toBe('hearts');
-      expect(s.trump.isRevealed).toBe(true);
+      expect(s.trump.isRevealed).toBe(false);
       expect(s.phase).toBe(GAME_PHASES.DOUBLE_PHASE);
       // Each player should have 8 cards after second deal
       for (const p of s.players) {
@@ -940,17 +957,32 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       s = skipDoublePhase(engine, s);
       expect(s.phase).toBe(GAME_PHASES.PLAYING);
 
-      // Declarer can reveal trump if they have a trump-suit card
+      // Declarer can reveal trump when they have no led suit cards
       const trumpSuit = s.trump.suit!;
-      const hasTrumpCard = declarer.hand.some(c => c.suit === trumpSuit);
+      const declarerHasTrumpCard = declarer.hand.some(c => c.suit === trumpSuit);
 
-      if (hasTrumpCard) {
-        const validation = engine.validateAction(s, action('REQUEST_TRUMP_REVEAL', declarer.id));
-        expect(validation.valid).toBe(true);
+      // Set up a trick led by a suit the declarer doesn't have
+      const ledSuit = declarer.hand.every(c => c.suit !== 'spades') ? 'spades' : 'clubs';
+      s.leadSuit = ledSuit as Suit;
+      s.currentTrick = {
+        plays: [{ playerId: 'p1', card: { suit: ledSuit, rank: 'J' } as Card, cardIndex: 0 }],
+        leadSuit: ledSuit as Suit,
+        winnerId: null,
+        trickNumber: 1,
+      };
+      s.currentTurn = declarer.seat;
 
-        s = engine.handleAction(s, action('REQUEST_TRUMP_REVEAL', declarer.id)).newState;
-        expect(s.trump.isRevealed).toBe(true);
-        expect(s.trump.revealedBy).toBe(declarer.id);
+      // Declarer should be able to reveal since they have no led-suit cards
+      if (declarerHasTrumpCard) {
+        const hasLedSuit = declarer.hand.some(c => c.suit === ledSuit);
+        if (!hasLedSuit) {
+          const validation = engine.validateAction(s, action('REQUEST_TRUMP_REVEAL', declarer.id));
+          expect(validation.valid).toBe(true);
+
+          s = engine.handleAction(s, action('REQUEST_TRUMP_REVEAL', declarer.id)).newState;
+          expect(s.trump.isRevealed).toBe(true);
+          expect(s.trump.revealedBy).toBe(declarer.id);
+        }
       }
     });
   });
@@ -995,6 +1027,7 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       const state = createGame(engine);
       state.players = PLAYER_IDS.map((id, seat) => ({
         id,
+        username: `Player ${seat + 1}`,
         seat,
         team: TEAMS[seat],
         hand: hands[seat],
@@ -1052,6 +1085,7 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       const state = createGame(engine);
       state.players = PLAYER_IDS.map((id, seat) => ({
         id,
+        username: `Player ${seat + 1}`,
         seat,
         team: TEAMS[seat],
         hand: [
@@ -1385,6 +1419,497 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       // Don't start the game — still in WAITING_FOR_PLAYERS
       const validation = engine.validateAction(state, action('PLACE_BID', 'p0', { bid: 16 }));
       expect(validation.valid).toBe(false);
+    });
+  });
+
+  describe('Trump Visibility', () => {
+    it('suit trump is hidden from non-declarers until revealed', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      s = skipDoublePhase(engine, s);
+
+      expect(s.trump.type).toBe('suit');
+      expect(s.trump.suit).toBe('hearts');
+      expect(s.trump.isRevealed).toBe(false);
+
+      // Declarer sees the trump suit
+      const declarerVisible = engine.getVisibleState(s, 'p0', 'player') as any;
+      expect(declarerVisible.trump.suit).toBe('hearts');
+      expect(declarerVisible.trump.isRevealed).toBe(false);
+
+      // Non-declarer does NOT see the trump suit
+      const opponentVisible = engine.getVisibleState(s, 'p1', 'player') as any;
+      expect(opponentVisible.trump.suit).toBeNull();
+      expect(opponentVisible.trump.isRevealed).toBe(false);
+
+      // Partner also does NOT see the trump suit
+      const partnerVisible = engine.getVisibleState(s, 'p2', 'player') as any;
+      expect(partnerVisible.trump.suit).toBeNull();
+    });
+
+    it('seventh-card trump is hidden from non-declarers until revealed', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_SEVENTH_CARD_TRUMP', 'p0'));
+      s = skipDoublePhase(engine, s);
+
+      expect(s.trump.type).toBe('seventh-card');
+      expect(s.trump.isRevealed).toBe(false);
+
+      // Declarer sees the trump suit (via TRUMP_HIDDEN broadcast)
+      const declarerVisible = engine.getVisibleState(s, 'p0', 'player') as any;
+      expect(declarerVisible.trump.suit).not.toBeNull();
+      expect(declarerVisible.trump.isRevealed).toBe(false);
+
+      // Non-declarer does NOT see the trump suit
+      const opponentVisible = engine.getVisibleState(s, 'p1', 'player') as any;
+      expect(opponentVisible.trump.suit).toBeNull();
+      expect(opponentVisible.trump.isRevealed).toBe(false);
+    });
+
+    it('joker trump shows no suit to anyone', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_JOKER', 'p0'));
+      s = skipDoublePhase(engine, s);
+
+      expect(s.trump.type).toBe('joker');
+
+      // Everyone sees null suit
+      const declarerVisible = engine.getVisibleState(s, 'p0', 'player') as any;
+      expect(declarerVisible.trump.suit).toBeNull();
+
+      const opponentVisible = engine.getVisibleState(s, 'p1', 'player') as any;
+      expect(opponentVisible.trump.suit).toBeNull();
+    });
+
+    it('TRUMP_SELECTED broadcast does not leak suit to anyone', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = doBidding(engine, s, 0, 20);
+      const result = engine.handleAction(s, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+
+      const trumpBroadcast = result.broadcasts.find((b) => b.event === 'TRUMP_SELECTED');
+      expect(trumpBroadcast).toBeDefined();
+      expect(trumpBroadcast!.payload.suit).toBeUndefined();
+
+      // There should be a TRUMP_HIDDEN broadcast targeted only to the declarer
+      const hiddenBroadcast = result.broadcasts.find((b) => b.event === 'TRUMP_HIDDEN');
+      expect(hiddenBroadcast).toBeDefined();
+      expect(hiddenBroadcast!.targetPlayerIds).toEqual(['p0']);
+      expect(hiddenBroadcast!.payload.suit).toBe('hearts');
+    });
+
+    it('trump becomes visible to all after reveal', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      s = skipDoublePhase(engine, s);
+
+      // Give p1 a hearts card so they can reveal
+      s.players[1].hand = [
+        { suit: 'hearts', rank: 'J' } as Card,
+        { suit: 'spades', rank: '9' } as Card,
+        { suit: 'clubs', rank: 'A' } as Card,
+        { suit: 'diamonds', rank: '10' } as Card,
+      ];
+
+      // p1 reveals trump
+      let result = engine.handleAction(s, action('REQUEST_TRUMP_REVEAL', 'p1'));
+      s = result.newState;
+      expect(s.trump.isRevealed).toBe(true);
+
+      // Now everyone can see the trump suit
+      const declarerVisible = engine.getVisibleState(s, 'p0', 'player') as any;
+      expect(declarerVisible.trump.suit).toBe('hearts');
+      expect(declarerVisible.trump.isRevealed).toBe(true);
+
+      const opponentVisible = engine.getVisibleState(s, 'p1', 'player') as any;
+      expect(opponentVisible.trump.suit).toBe('hearts');
+      expect(opponentVisible.trump.isRevealed).toBe(true);
+
+      const partnerVisible = engine.getVisibleState(s, 'p2', 'player') as any;
+      expect(partnerVisible.trump.suit).toBe('hearts');
+      expect(partnerVisible.trump.isRevealed).toBe(true);
+    });
+
+    it('declarer can reveal trump when they have no led suit cards', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      s = skipDoublePhase(engine, s);
+      expect(s.phase).toBe(GAME_PHASES.PLAYING);
+
+      // Start a trick led by spades
+      s.leadSuit = 'spades' as Suit;
+      s.currentTrick = {
+        plays: [{ playerId: 'p2', card: { suit: 'spades', rank: 'J' } as Card, cardIndex: 0 }],
+        leadSuit: 'spades' as Suit,
+        winnerId: null,
+        trickNumber: 1,
+      };
+      s.currentTurn = 0; // p0's turn
+
+      // Give p0 only hearts (no spades)
+      s.players[0].hand = [
+        { suit: 'hearts', rank: 'J' } as Card,
+        { suit: 'hearts', rank: '9' } as Card,
+        { suit: 'diamonds', rank: 'A' } as Card,
+        { suit: 'clubs', rank: '10' } as Card,
+      ];
+
+      const validation = engine.validateAction(s, action('REQUEST_TRUMP_REVEAL', 'p0'));
+      expect(validation.valid).toBe(true);
+    });
+
+    it('cannot reveal trump if player has led suit cards', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      s = skipDoublePhase(engine, s);
+
+      // Start a trick led by spades
+      s.leadSuit = 'spades' as Suit;
+      s.currentTrick = {
+        plays: [{ playerId: 'p2', card: { suit: 'spades', rank: 'J' } as Card, cardIndex: 0 }],
+        leadSuit: 'spades' as Suit,
+        winnerId: null,
+        trickNumber: 1,
+      };
+      s.currentTurn = 0;
+
+      // Give p0 a spade card - must follow suit
+      s.players[0].hand = [
+        { suit: 'spades', rank: '9' } as Card,
+        { suit: 'hearts', rank: 'J' } as Card,
+        { suit: 'diamonds', rank: 'A' } as Card,
+        { suit: 'clubs', rank: '10' } as Card,
+      ];
+
+      const validation = engine.validateAction(s, action('REQUEST_TRUMP_REVEAL', 'p0'));
+      expect(validation.valid).toBe(false);
+    });
+
+    it('cannot reveal trump when leading (first card of trick)', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      s = skipDoublePhase(engine, s);
+
+      // p0 is leading (no lead suit yet)
+      s.leadSuit = null;
+      s.currentTrick = {
+        plays: [],
+        leadSuit: null,
+        winnerId: null,
+        trickNumber: 1,
+      };
+      s.currentTurn = 0;
+
+      const validation = engine.validateAction(s, action('REQUEST_TRUMP_REVEAL', 'p0'));
+      expect(validation.valid).toBe(false);
+    });
+
+    it('cannot reveal trump if not your turn', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      s = skipDoublePhase(engine, s);
+
+      // Start a trick led by spades, p1's turn
+      s.leadSuit = 'spades' as Suit;
+      s.currentTrick = {
+        plays: [{ playerId: 'p2', card: { suit: 'spades', rank: 'J' } as Card, cardIndex: 0 }],
+        leadSuit: 'spades' as Suit,
+        winnerId: null,
+        trickNumber: 1,
+      };
+      s.currentTurn = 1; // p1's turn
+
+      // Give p1 no spades
+      s.players[1].hand = [
+        { suit: 'hearts', rank: 'J' } as Card,
+        { suit: 'hearts', rank: '9' } as Card,
+        { suit: 'diamonds', rank: 'A' } as Card,
+        { suit: 'clubs', rank: '10' } as Card,
+      ];
+
+      // p0 tries to reveal but it's not their turn
+      const validation = engine.validateAction(s, action('REQUEST_TRUMP_REVEAL', 'p0'));
+      expect(validation.valid).toBe(false);
+    });
+
+    it('trick resolved correctly when trump not revealed - trump cards have no power', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      s = skipDoublePhase(engine, s);
+
+      // p0 leads spades
+      s.leadSuit = 'spades';
+      s.currentTrick = {
+        plays: [
+          { playerId: 'p0', card: { suit: 'spades', rank: '10' } as Card, cardIndex: 0 },
+          { playerId: 'p1', card: { suit: 'spades', rank: 'K' } as Card, cardIndex: 1 },
+          { playerId: 'p2', card: { suit: 'hearts', rank: 'J' } as Card, cardIndex: 2 }, // trump but not revealed!
+        ],
+        leadSuit: 'spades',
+        winnerId: null,
+        trickNumber: 1,
+      };
+      s.currentTurn = 3; // p3's turn
+      s.trump.isRevealed = false;
+
+      // Give p3 the Q of spades (lower than 10 and K)
+      s.players[3].hand = [
+        { suit: 'spades', rank: 'Q' } as Card,
+      ];
+
+      const result = engine.handleAction(s, action('PLAY_CARD', 'p3', { cardIndex: 0 }));
+
+      // p1's K of spades should win since trump has no power when not revealed
+      // K(3) > Q(2) > 10(4) -- wait, 10=4, K=3, Q=2, so 10 > K > Q
+      // p0's 10 should win (10=4 is highest)
+      expect(result.newState.completedTricks).toHaveLength(1);
+      expect(result.newState.completedTricks[0].winnerId).toBe('p0');
+    });
+
+    it('trick resolved correctly when trump is revealed - trump beats non-trump', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      s = skipDoublePhase(engine, s);
+
+      // p0 leads spades
+      s.leadSuit = 'spades';
+      s.currentTrick = {
+        plays: [
+          { playerId: 'p0', card: { suit: 'spades', rank: '10' } as Card, cardIndex: 0 },
+          { playerId: 'p1', card: { suit: 'spades', rank: 'K' } as Card, cardIndex: 1 },
+          { playerId: 'p2', card: { suit: 'hearts', rank: '7' } as Card, cardIndex: 2 }, // trump (lowest)
+        ],
+        leadSuit: 'spades',
+        winnerId: null,
+        trickNumber: 1,
+      };
+      s.currentTurn = 3; // p3's turn
+      s.trump.isRevealed = true;
+
+      // Give p3 the Q of spades
+      s.players[3].hand = [
+        { suit: 'spades', rank: 'Q' } as Card,
+      ];
+
+      const result = engine.handleAction(s, action('PLAY_CARD', 'p3', { cardIndex: 0 }));
+
+      // p2's heart 7 should win since trump is revealed and beats all non-trump
+      expect(result.newState.completedTricks).toHaveLength(1);
+      expect(result.newState.completedTricks[0].winnerId).toBe('p2');
+    });
+
+    it('cannot reveal trump if already revealed', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      s = skipDoublePhase(engine, s);
+
+      // Give p0 hearts cards and reveal
+      s.players[0].hand = [
+        { suit: 'hearts', rank: 'J' } as Card,
+        { suit: 'spades', rank: '9' } as Card,
+        { suit: 'clubs', rank: 'A' } as Card,
+        { suit: 'diamonds', rank: '10' } as Card,
+      ];
+
+      let result = engine.handleAction(s, action('REQUEST_TRUMP_REVEAL', 'p0'));
+      s = result.newState;
+      expect(s.trump.isRevealed).toBe(true);
+
+      // Try to reveal again — should fail
+      const validation = engine.validateAction(s, action('REQUEST_TRUMP_REVEAL', 'p1'));
+      expect(validation.valid).toBe(false);
+    });
+
+    it('spectators never see hidden trump', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      s = skipDoublePhase(engine, s);
+
+      // Spectator view
+      const spectatorVisible = engine.getVisibleState(s, 'spectator1', 'spectator') as any;
+      expect(spectatorVisible.trump.suit).toBeNull();
+      expect(spectatorVisible.trump.isRevealed).toBe(false);
+    });
+  });
+
+  describe('Trump Obligation After Reveal', () => {
+    it('must play trump card when trump revealed and no led suit cards', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      s = skipDoublePhase(engine, s);
+      s.trump.isRevealed = true;
+      s.trump.revealedBy = 'p1';
+      s.trump.mustPlayTrump = true; // p1 is the revealer — one-turn obligation
+
+      // p0 leads spades
+      s.leadSuit = 'spades';
+      s.currentTrick = {
+        plays: [{ playerId: 'p0', card: { suit: 'spades', rank: 'J' } as Card, cardIndex: 0 }],
+        leadSuit: 'spades',
+        winnerId: null,
+        trickNumber: 1,
+      };
+      s.currentTurn = 1; // p1's turn
+
+      // p1 has no spades but has hearts (trump) — as revealer, must play trump THIS turn
+      s.players[1].hand = [
+        { suit: 'hearts', rank: 'J' } as Card,
+        { suit: 'diamonds', rank: 'A' } as Card,
+        { suit: 'clubs', rank: '10' } as Card,
+      ];
+
+      // Playing a non-trump card should be rejected
+      const validation = engine.validateAction(s, action('PLAY_CARD', 'p1', { cardIndex: 1 }));
+      expect(validation.valid).toBe(false);
+      expect(validation.error).toContain('trump');
+
+      // Playing a trump card should be valid
+      const validation2 = engine.validateAction(s, action('PLAY_CARD', 'p1', { cardIndex: 0 }));
+      expect(validation2.valid).toBe(true);
+    });
+
+    it('can play any card when no led suit and no trump obligation', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      s = skipDoublePhase(engine, s);
+      s.trump.isRevealed = true;
+
+      // p0 is leading (no lead suit)
+      s.leadSuit = null;
+      s.currentTrick = {
+        plays: [],
+        leadSuit: null,
+        winnerId: null,
+        trickNumber: 1,
+      };
+      s.currentTurn = 0; // p0's turn
+
+      // p0 can play any card when leading
+      const validation = engine.validateAction(s, action('PLAY_CARD', 'p0', { cardIndex: 0 }));
+      expect(validation.valid).toBe(true);
+    });
+
+    it('must follow lead suit even when trump is revealed', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      s = skipDoublePhase(engine, s);
+      s.trump.isRevealed = true;
+
+      // p0 leads spades
+      s.leadSuit = 'spades';
+      s.currentTrick = {
+        plays: [{ playerId: 'p0', card: { suit: 'spades', rank: 'J' } as Card, cardIndex: 0 }],
+        leadSuit: 'spades',
+        winnerId: null,
+        trickNumber: 1,
+      };
+      s.currentTurn = 1;
+
+      // p1 has both spades and hearts (trump)
+      s.players[1].hand = [
+        { suit: 'spades', rank: '9' } as Card,
+        { suit: 'hearts', rank: 'J' } as Card,
+        { suit: 'diamonds', rank: 'A' } as Card,
+      ];
+
+      // Must follow spades, cannot play trump
+      const validation = engine.validateAction(s, action('PLAY_CARD', 'p1', { cardIndex: 1 }));
+      expect(validation.valid).toBe(false);
+      expect(validation.error).toContain('led suit');
+
+      // Playing spades is valid
+      const validation2 = engine.validateAction(s, action('PLAY_CARD', 'p1', { cardIndex: 0 }));
+      expect(validation2.valid).toBe(true);
+    });
+
+    it('can play anything when no led suit and no trump cards', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      s = skipDoublePhase(engine, s);
+      s.trump.isRevealed = true;
+
+      // p0 leads spades
+      s.leadSuit = 'spades';
+      s.currentTrick = {
+        plays: [{ playerId: 'p0', card: { suit: 'spades', rank: 'J' } as Card, cardIndex: 0 }],
+        leadSuit: 'spades',
+        winnerId: null,
+        trickNumber: 1,
+      };
+      s.currentTurn = 1;
+
+      // p1 has no spades AND no hearts (trump)
+      s.players[1].hand = [
+        { suit: 'diamonds', rank: 'J' } as Card,
+        { suit: 'clubs', rank: '9' } as Card,
+        { suit: 'diamonds', rank: 'A' } as Card,
+      ];
+
+      // Can play any card since no lead suit and no trump
+      const validation = engine.validateAction(s, action('PLAY_CARD', 'p1', { cardIndex: 0 }));
+      expect(validation.valid).toBe(true);
+    });
+
+    it('no trump obligation when trump not revealed', () => {
+      const engine = createEngine();
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(engine, s, 'p0', 20, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      s = skipDoublePhase(engine, s);
+      s.trump.isRevealed = false;
+
+      // p0 leads spades
+      s.leadSuit = 'spades';
+      s.currentTrick = {
+        plays: [{ playerId: 'p0', card: { suit: 'spades', rank: 'J' } as Card, cardIndex: 0 }],
+        leadSuit: 'spades',
+        winnerId: null,
+        trickNumber: 1,
+      };
+      s.currentTurn = 1;
+
+      // p1 has no spades but has hearts (trump) — but trump not revealed
+      s.players[1].hand = [
+        { suit: 'hearts', rank: 'J' } as Card,
+        { suit: 'diamonds', rank: 'A' } as Card,
+      ];
+
+      // Can play diamonds since trump not revealed — no obligation
+      const validation = engine.validateAction(s, action('PLAY_CARD', 'p1', { cardIndex: 1 }));
+      expect(validation.valid).toBe(true);
     });
   });
 });

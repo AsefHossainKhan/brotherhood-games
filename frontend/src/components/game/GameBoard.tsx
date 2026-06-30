@@ -11,6 +11,7 @@ import { TrumpSelector } from '@/components/games/twenty-nine/TrumpSelector';
 import { DoublePanel } from '@/components/games/twenty-nine/DoublePanel';
 import { WeakHandPanel } from '@/components/games/twenty-nine/WeakHandPanel';
 import { GameStatus } from '@/components/games/twenty-nine/GameStatus';
+import { TrumpRevealPanel } from '@/components/games/twenty-nine/TrumpRevealPanel';
 
 export function GameBoard() {
   const { phase, players, myPlayer, isMyTurn, score, weakHandPlayer } = useGame();
@@ -52,6 +53,7 @@ export function GameBoard() {
           {showBidPanel && <div data-testid="bid-panel"><BidPanel /></div>}
           {showTrumpSelector && <div data-testid="trump-selector"><TrumpSelector /></div>}
           {showDoublePanel && <div data-testid="double-panel"><DoublePanel /></div>}
+          <TrumpRevealPanel />
         </div>
       </div>
 

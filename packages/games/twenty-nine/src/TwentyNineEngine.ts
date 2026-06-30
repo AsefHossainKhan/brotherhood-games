@@ -41,9 +41,10 @@ import type { GamePhase } from '@brotherhood/shared';
 export class TwentyNineEngine implements GameEngine<TwentyNineState> {
   readonly gameType = 'twenty-nine' as const;
 
-  createInitialState(playerIds: string[], settings: RoomSettings, teams?: (0 | 1)[]): TwentyNineState {
+  createInitialState(playerIds: string[], settings: RoomSettings, teams?: (0 | 1)[], usernames?: string[]): TwentyNineState {
     const players: TwentyNinePlayer[] = playerIds.map((id, seat) => ({
       id,
+      username: usernames?.[seat] ?? `Player ${seat + 1}`,
       seat,
       team: teams?.[seat] ?? (seat % 2) as 0 | 1, // Use provided teams or fallback to seat-based
       hand: [],
@@ -72,6 +73,7 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
         isRevealed: false,
         seventhCard: null,
         revealedBy: null,
+        mustPlayTrump: false,
       },
       double: {
         level: 'normal',
@@ -183,6 +185,7 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       phase: state.phase,
       players: state.players.map((p) => ({
         id: p.id,
+        username: p.username,
         seat: p.seat,
         team: p.team,
         isDealer: p.isDealer,
@@ -195,14 +198,18 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       bidding: state.bidding,
       trump: {
         type: state.trump.type,
-        // Hide suit if seventh-card and not revealed (unless you're the declarer)
+        // Hide suit from everyone except declarer until revealed
+        // For joker (no trump), suit is always null
         suit:
-          state.trump.type === 'seventh-card' && !state.trump.isRevealed && !isDeclarer
+          state.trump.type === 'joker'
+            ? null
+            : !state.trump.isRevealed && !isDeclarer
             ? null
             : state.trump.suit,
         isRevealed: state.trump.isRevealed,
         // Hide seventh card unless you're the declarer
         seventhCard: isDeclarer ? state.trump.seventhCard : null,
+        mustPlayTrump: state.trump.mustPlayTrump && state.trump.revealedBy === playerId,
       },
       double: state.double,
       currentTrick: {
@@ -523,14 +530,22 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     state.trump = {
       type: 'suit',
       suit: result.suit,
-      isRevealed: true,
+      isRevealed: false,
       seventhCard: null,
       revealedBy: null,
+      mustPlayTrump: false,
     };
+
+    // Tell the declarer the actual trump (private info)
+    broadcasts.push({
+      event: 'TRUMP_HIDDEN',
+      payload: { suit: result.suit, type: 'suit' },
+      targetPlayerIds: [playerId],
+    });
 
     broadcasts.push({
       event: 'TRUMP_SELECTED',
-      payload: { type: 'suit', suit: result.suit },
+      payload: { type: 'suit' },
     });
 
     return this.proceedToSecondDeal(state, broadcasts);
@@ -555,6 +570,7 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       isRevealed: false,
       seventhCard: null, // Will be set after second deal
       revealedBy: null,
+      mustPlayTrump: false,
     };
 
     broadcasts.push({
@@ -577,6 +593,7 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       isRevealed: false,
       seventhCard: null,
       revealedBy: null,
+      mustPlayTrump: false,
     };
 
     broadcasts.push({
@@ -819,19 +836,34 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     }
 
     const card = player.hand[cardIndex];
+    const mustPlayTrump = state.trump.mustPlayTrump && state.trump.revealedBy === playerId;
 
-    // Validate play (follow suit)
-    if (!isValidPlay(player.hand, card, state.leadSuit)) {
+    // Validate play (follow suit + revealer's one-turn trump obligation)
+    if (!isValidPlay(player.hand, card, state.leadSuit, state.trump.suit, mustPlayTrump)) {
+      const hasLeadSuit = player.hand.some((c) => c.suit === state.leadSuit);
+      const hasTrump = state.trump.suit
+        ? player.hand.some((c) => c.suit === state.trump.suit)
+        : false;
+      const message = hasLeadSuit
+        ? 'You must follow the led suit'
+        : (mustPlayTrump && hasTrump)
+        ? 'You revealed trump — must play a trump card this turn'
+        : 'Invalid play';
       return {
         newState: state,
         broadcasts,
-        errors: [{ code: 'MUST_FOLLOW_SUIT', message: 'You must follow suit if possible' }],
+        errors: [{ code: 'MUST_FOLLOW_SUIT', message }],
       };
     }
 
     // Play the card
     player.hand.splice(cardIndex, 1);
     state.currentTrick.plays.push({ playerId, card, cardIndex });
+
+    // Clear mustPlayTrump after revealer plays their turn
+    if (mustPlayTrump && state.trump.mustPlayTrump) {
+      state.trump.mustPlayTrump = false;
+    }
 
     // Set lead suit if this is the first play of the trick
     if (state.currentTrick.plays.length === 1) {
@@ -861,7 +893,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
   ): ActionResult<TwentyNineState> {
     const { winnerId } = resolveTrick(
       state.currentTrick.plays.map((p) => ({ playerId: p.playerId, card: p.card })),
-      state.trump.suit
+      state.trump.suit,
+      state.trump.isRevealed
     );
 
     state.currentTrick.winnerId = winnerId;
@@ -916,17 +949,10 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       return { newState: state, broadcasts, errors: [{ code: 'ALREADY_REVEALED', message: 'Trump already revealed' }] };
     }
 
-    if (!canRevealTrump(player.hand, state.trump.suit)) {
-      return {
-        newState: state,
-        broadcasts,
-        errors: [{ code: 'CANNOT_REVEAL', message: 'You do not have any cards of the trump suit' }],
-      };
-    }
-
-    const result = revealTrump(player.hand, state.trump.suit);
+    // Validation already ensures: correct phase, player's turn, no led-suit cards
     state.trump.isRevealed = true;
     state.trump.revealedBy = playerId;
+    state.trump.mustPlayTrump = true;
 
     broadcasts.push({
       event: 'TRUMP_REVEALED',
@@ -1101,16 +1127,35 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     if (cardIndex < 0 || cardIndex >= player.hand.length) return { valid: false, error: 'Invalid card index' };
 
     const card = player.hand[cardIndex];
-    if (!isValidPlay(player.hand, card, state.leadSuit)) return { valid: false, error: 'Must follow suit' };
+    const mustPlayTrump = state.trump.mustPlayTrump && state.trump.revealedBy === playerId;
+    if (!isValidPlay(player.hand, card, state.leadSuit, state.trump.suit, mustPlayTrump)) {
+      const hasLeadSuit = player.hand.some((c) => c.suit === state.leadSuit);
+      if (hasLeadSuit) return { valid: false, error: 'Must follow the led suit' };
+      if (mustPlayTrump && state.trump.suit && player.hand.some((c) => c.suit === state.trump.suit)) {
+        return { valid: false, error: 'You revealed trump — must play a trump card this turn' };
+      }
+      return { valid: false, error: 'Invalid play' };
+    }
     return { valid: true };
   }
 
   private validateTrumpReveal(state: TwentyNineState, playerId: string): { valid: boolean; error?: string } {
-    if (state.trump.type !== 'seventh-card') return { valid: false, error: 'No hidden trump to reveal' };
+    // Allow reveal for any hidden trump (suit or seventh-card), but not joker
+    if (!state.trump.type || state.trump.type === 'joker') return { valid: false, error: 'No trump to reveal' };
     if (state.trump.isRevealed) return { valid: false, error: 'Trump already revealed' };
     const player = state.players.find((p) => p.id === playerId);
     if (!player) return { valid: false, error: 'Player not found' };
-    if (!state.trump.suit || !canRevealTrump(player.hand, state.trump.suit)) return { valid: false, error: 'Cannot reveal trump' };
+    // Must be the player's turn
+    if (player.seat !== state.currentTurn) return { valid: false, error: 'Not your turn' };
+    // Must be in playing phase
+    if (state.phase !== GAME_PHASES.PLAYING) return { valid: false, error: 'Not in playing phase' };
+    // There must be a led suit (not the first card of the trick - leader can't reveal)
+    if (!state.leadSuit) return { valid: false, error: 'Cannot reveal when leading the trick' };
+    // Player must NOT have any cards of the led suit
+    const hasLedSuit = player.hand.some((c) => c.suit === state.leadSuit);
+    if (hasLedSuit) return { valid: false, error: 'Must follow suit - cannot reveal' };
+    // Player must have at least one trump card to make reveal meaningful (optional but logical)
+    if (!state.trump.suit) return { valid: false, error: 'No trump suit set' };
     return { valid: true };
   }
 

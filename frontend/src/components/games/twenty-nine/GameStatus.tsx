@@ -1,6 +1,7 @@
 'use client';
 
 import { useGame } from '@/hooks/useGame';
+import { useSocketStore } from '@/stores/socketStore';
 
 const PHASE_LABELS: Record<string, string> = {
   WAITING_FOR_PLAYERS: 'Waiting for players...',
@@ -18,10 +19,10 @@ const PHASE_LABELS: Record<string, string> = {
 
 export function GameStatus() {
   const { phase, players, currentTurn, weakHandPlayer } = useGame();
+  const guestId = useSocketStore((s) => s.guestId);
 
   const currentPlayer = players[currentTurn];
-  const isMyTurn = currentPlayer?.id ===
-    (typeof window !== 'undefined' ? localStorage.getItem('brotherhood_guest_id') : '');
+  const isMyTurn = currentPlayer?.id === guestId;
 
   return (
     <div className="flex items-center gap-4">
@@ -48,7 +49,7 @@ export function GameStatus() {
               isMyTurn ? 'text-green-400' : 'text-white'
             }`}
           >
-            {isMyTurn ? '🎯 Your turn' : `Seat ${currentTurn + 1}`}
+            {isMyTurn ? '🎯 Your turn' : `${currentPlayer.username}'s turn`}
           </span>
         </div>
       )}

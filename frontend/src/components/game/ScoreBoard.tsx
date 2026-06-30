@@ -40,13 +40,18 @@ export function ScoreBoard() {
         </div>
       )}
 
-      {/* Trump */}
-      {trump.suit && (
+      {/* Trump - hidden until revealed (declarer already knows) */}
+      {trump.type === 'joker' && (
+        <div className="text-center">
+          <div className="text-xs text-gray-500">Trump</div>
+          <div className="text-sm font-medium text-green-400">No Trump</div>
+        </div>
+      )}
+      {trump.type && trump.type !== 'joker' && (
         <div className="text-center">
           <div className="text-xs text-gray-500">Trump</div>
           <div className="text-sm font-medium text-green-400">
-            {trump.type === 'joker' ? '🃏 None' : trump.suit}
-            {trump.type === 'seventh-card' && !trump.isRevealed && ' (hidden)'}
+            {trump.isRevealed ? trump.suit : 'Hidden'}
           </div>
         </div>
       )}
