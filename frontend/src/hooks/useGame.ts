@@ -53,6 +53,10 @@ export function useGame() {
     socket?.emit('DECLARE_FULLSET');
   };
 
+  const passDouble = () => {
+    socket?.emit('PASS_DOUBLE');
+  };
+
   // Playing
   const playCard = (cardIndex: number) => {
     socket?.emit('PLAY_CARD', { cardIndex });
@@ -68,6 +72,10 @@ export function useGame() {
     socket?.emit('CANCEL_WEAK_HAND');
   };
 
+  const keepWeakHand = () => {
+    socket?.emit('KEEP_WEAK_HAND');
+  };
+
   return {
     ...game,
     myPlayer,
@@ -80,8 +88,10 @@ export function useGame() {
     declareDouble,
     declareRedouble,
     declareFullset,
+    passDouble,
     playCard,
     requestTrumpReveal,
     cancelWeakHand,
+    keepWeakHand,
   };
 }

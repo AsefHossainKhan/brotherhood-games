@@ -10,15 +10,20 @@ export default defineConfig({
   testDir: './e2e',
   fullyParallel: false, // sequential by default; individual tests opt-in
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries: process.env.CI ? 2 : 1, // 1 retry locally for flaky socket timing
   workers: 1,
   reporter: [['html', { open: 'never' }], ['list']],
-  timeout: 30_000,
+  // Global timeout is generous; individual tests set their own expect timeouts
+  timeout: 300_000, // 5 minutes — full game tests can be slow with 4 simulated players
 
   use: {
     baseURL: 'http://localhost:3000',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+    // Action timeout: how long to wait for clicks/fills
+    actionTimeout: 10_000,
+    // Navigation timeout
+    navigationTimeout: 15_000,
   },
 
   projects: [

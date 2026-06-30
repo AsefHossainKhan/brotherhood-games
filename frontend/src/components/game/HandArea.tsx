@@ -37,6 +37,7 @@ export function HandArea({ cards }: HandAreaProps) {
         {cards.map((card, index) => (
           <div
             key={`${card.suit}_${card.rank}_${index}`}
+            data-testid={`card-${card.suit}-${card.rank}`}
             className={`transition-transform ${
               selectedIndex === index ? '-translate-y-3' : ''
             } ${canPlay ? 'cursor-pointer hover:-translate-y-1' : ''}`}

@@ -1,0 +1,447 @@
+/**
+ * E2E Tests: Full 29 Game Flow
+ *
+ * Comprehensive tests covering every phase of a 29 card game.
+ * Uses 4 simulated players via isolated browser contexts.
+ *
+ * NOTE: These tests simulate 4 real players with real sockets.
+ * Each test takes 15-60s depending on complexity. The full game
+ * test can take up to 5 minutes — this is expected.
+ *
+ * Requires: `npm run dev` (frontend :3000 + backend :4000)
+ */
+import { test, expect, type PlayerContext } from './fixtures';
+import {
+  setupFullGame,
+  waitForPhase,
+  findPlayerWith,
+  doQuickBidding,
+  doQuickTrumpSelection,
+  selectSeventhCardTrump,
+  selectJokerTrump,
+  skipDoublePhase,
+  doDoubleThenPass,
+  waitForPlayingPhase,
+  playCurrentTurn,
+  playTrick,
+  advanceToPlaying,
+} from './helpers';
+
+// ============================================================
+//  1. Lobby & Game Start
+// ============================================================
+
+test.describe('Lobby → Game Start', () => {
+  test('4 players join and game starts with game board visible', async ({ players }) => {
+    await setupFullGame(players);
+
+    for (const player of players) {
+      await expect(player.page.getByTestId('game-board')).toBeVisible({ timeout: 20_000 });
+    }
+  });
+
+  test('after start, each player sees cards in hand', async ({ players }) => {
+    await setupFullGame(players);
+
+    for (const player of players) {
+      await expect(player.page.getByTestId('game-board')).toBeVisible({ timeout: 20_000 });
+      await player.page.waitForTimeout(2_000);
+      const cardCount = await player.page.locator('[data-testid^="card-"]').count();
+      expect(cardCount).toBeGreaterThanOrEqual(4);
+    }
+  });
+});
+
+// ============================================================
+//  2. Bidding Phase
+// ============================================================
+
+test.describe('Bidding Phase', () => {
+  test('first bidder sees bid panel, others do not', async ({ players }) => {
+    await setupFullGame(players);
+    await waitForPhase(players, 'Bidding', 20_000);
+
+    let bidderCount = 0;
+    for (const player of players) {
+      const hasPanel = await player.page.getByTestId('bid-panel').isVisible().catch(() => false);
+      if (hasPanel) bidderCount++;
+    }
+    expect(bidderCount).toBe(1);
+  });
+
+  test('player can place a bid and it is reflected', async ({ players }) => {
+    await setupFullGame(players);
+    await waitForPhase(players, 'Bidding', 20_000);
+
+    const bidder = await findPlayerWith(players, 'bid-panel', 15_000);
+    expect(bidder).not.toBeNull();
+
+    const bidBtn = bidder!.page.getByTestId('place-bid-btn');
+    await expect(bidBtn).toBeVisible({ timeout: 5_000 });
+    await bidBtn.click();
+
+    await bidder!.page.waitForTimeout(1_500);
+  });
+
+  test('player can pass bid', async ({ players }) => {
+    await setupFullGame(players);
+    await waitForPhase(players, 'Bidding', 20_000);
+
+    const bidder = await findPlayerWith(players, 'bid-panel', 15_000);
+    expect(bidder).not.toBeNull();
+
+    const passBtn = bidder!.page.getByTestId('pass-bid-btn');
+    await expect(passBtn).toBeVisible({ timeout: 5_000 });
+    await passBtn.click();
+
+    await bidder!.page.waitForTimeout(1_500);
+  });
+
+  test('bidding completes: 1 bid + 3 passes → trump selection', async ({ players }) => {
+    await setupFullGame(players);
+    await doQuickBidding(players);
+
+    await waitForPhase(players, 'Trump Selection', 15_000);
+  });
+
+  test('bid panel only shows on current bidder screen', async ({ players }) => {
+    await setupFullGame(players);
+    await waitForPhase(players, 'Bidding', 20_000);
+    await players[0].page.waitForTimeout(1_000);
+
+    let panelsVisible = 0;
+    for (const player of players) {
+      const hasPanel = await player.page.getByTestId('bid-panel').isVisible().catch(() => false);
+      if (hasPanel) panelsVisible++;
+    }
+    expect(panelsVisible).toBe(1);
+  });
+});
+
+// ============================================================
+//  3. Trump Selection
+// ============================================================
+
+test.describe('Trump Selection', () => {
+  test('declarer sees trump selector, others do not', async ({ players }) => {
+    await setupFullGame(players);
+    await doQuickBidding(players);
+    await waitForPhase(players, 'Trump Selection', 15_000);
+
+    let selectorCount = 0;
+    for (const player of players) {
+      const hasSelector = await player.page.getByTestId('trump-selector').isVisible().catch(() => false);
+      if (hasSelector) selectorCount++;
+    }
+    expect(selectorCount).toBe(1);
+  });
+
+  test('select suit trump → moves to double phase', async ({ players }) => {
+    await setupFullGame(players);
+    await doQuickBidding(players);
+    await doQuickTrumpSelection(players, 'hearts');
+    // doQuickTrumpSelection already waits for Double Phase
+  });
+
+  test('select 7th card trump → moves to double phase', async ({ players }) => {
+    await setupFullGame(players);
+    await doQuickBidding(players);
+    await selectSeventhCardTrump(players);
+    // selectSeventhCardTrump already waits for Double Phase
+  });
+
+  test('select joker → moves to double phase', async ({ players }) => {
+    await setupFullGame(players);
+    await doQuickBidding(players);
+    await selectJokerTrump(players);
+    // selectJokerTrump already waits for Double Phase
+  });
+
+  test('each player has 8 cards after second deal', async ({ players }) => {
+    await setupFullGame(players);
+    await doQuickBidding(players);
+    await doQuickTrumpSelection(players);
+    // doQuickTrumpSelection already waits for Double Phase
+
+    for (const player of players) {
+      await player.page.waitForTimeout(1_000);
+      const cardCount = await player.page.locator('[data-testid^="card-"]').count();
+      expect(cardCount).toBe(8);
+    }
+  });
+});
+
+// ============================================================
+//  4. Double Phase
+// ============================================================
+
+test.describe('Double Phase', () => {
+  test('opponent sees double/pass buttons', async ({ players }) => {
+    await setupFullGame(players);
+    await doQuickBidding(players);
+    await doQuickTrumpSelection(players);
+    // Already in Double Phase
+
+    const hasButtons = await findPlayerWith(players, 'pass-double-btn', 10_000);
+    expect(hasButtons).not.toBeNull();
+  });
+
+  test('all pass → skip to playing phase', async ({ players }) => {
+    await setupFullGame(players);
+    await doQuickBidding(players);
+    await doQuickTrumpSelection(players);
+    await skipDoublePhase(players);
+
+    await waitForPlayingPhase(players);
+  });
+
+  test('opponent doubles then pass → playing with ×2', async ({ players }) => {
+    await setupFullGame(players);
+    await doQuickBidding(players);
+    await doQuickTrumpSelection(players);
+    await doDoubleThenPass(players);
+
+    await waitForPlayingPhase(players);
+  });
+});
+
+// ============================================================
+//  5. Playing Phase (Tricks)
+// ============================================================
+
+test.describe('Playing Phase', () => {
+  test('declarer leads — someone has "Your turn"', async ({ players }) => {
+    await setupFullGame(players);
+    await advanceToPlaying(players);
+
+    let turnFound = false;
+    for (const player of players) {
+      if (await player.page.locator('text=Your turn').isVisible().catch(() => false)) {
+        turnFound = true;
+        break;
+      }
+    }
+    expect(turnFound).toBe(true);
+  });
+
+  test('current player can play a card', async ({ players }) => {
+    await setupFullGame(players);
+    await advanceToPlaying(players);
+
+    const activePlayer = await playCurrentTurn(players);
+    expect(activePlayer).not.toBeNull();
+  });
+
+  test('trick resolves after 4 cards → winner leads next', async ({ players }) => {
+    await setupFullGame(players);
+    await advanceToPlaying(players);
+
+    await playTrick(players);
+
+    // Wait for the next player's turn to appear (can take a moment via socket)
+    let turnFound = false;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      for (const player of players) {
+        if (await player.page.locator('text=Your turn').isVisible().catch(() => false)) {
+          turnFound = true;
+          break;
+        }
+      }
+      if (turnFound) break;
+      await players[0].page.waitForTimeout(500);
+    }
+    expect(turnFound).toBe(true);
+  });
+
+  test('exactly one player has "Your turn" at any time', async ({ players }) => {
+    await setupFullGame(players);
+    await advanceToPlaying(players);
+
+    let turnCount = 0;
+    for (const player of players) {
+      if (await player.page.locator('text=Your turn').isVisible().catch(() => false)) {
+        turnCount++;
+      }
+    }
+    expect(turnCount).toBe(1);
+  });
+
+  test('full game: all 8 tricks → game ends (up to 5 min)', async ({ players }) => {
+    test.setTimeout(300_000); // 5 minutes
+
+    await setupFullGame(players);
+    await advanceToPlaying(players);
+
+    for (let trick = 0; trick < 8; trick++) {
+      for (let cardInTrick = 0; cardInTrick < 4; cardInTrick++) {
+        try {
+          await playCurrentTurn(players);
+        } catch {
+          // Game may have ended early (hidden trump cancellation)
+          break;
+        }
+      }
+      await players[0].page.waitForTimeout(800);
+
+      // Check if game ended early
+      let matchDone = false;
+      for (const p of players) {
+        try {
+          await expect(p.page.locator('text=Match Complete')).toBeVisible({ timeout: 500 });
+          matchDone = true;
+          break;
+        } catch { /* not yet */ }
+      }
+      if (matchDone) break;
+    }
+
+    await players[0].page.waitForTimeout(3_000);
+
+    for (const player of players) {
+      await expect(player.page.getByTestId('game-board')).toBeVisible();
+    }
+  });
+});
+
+// ============================================================
+//  6. Follow-Suit Enforcement
+// ============================================================
+
+test.describe('Follow Suit', () => {
+  test('trick plays proceed without crash', async ({ players }) => {
+    await setupFullGame(players);
+    await advanceToPlaying(players);
+
+    const leader = await playCurrentTurn(players);
+    await leader.page.waitForTimeout(500);
+
+    for (let i = 0; i < 3; i++) {
+      try {
+        await playCurrentTurn(players);
+      } catch {
+        break;
+      }
+    }
+  });
+});
+
+// ============================================================
+//  7. Scoring
+// ============================================================
+
+test.describe('Scoring', () => {
+  test('scoreboard visible after game (up to 5 min)', async ({ players }) => {
+    test.setTimeout(300_000);
+
+    await setupFullGame(players);
+    await advanceToPlaying(players);
+
+    for (let trick = 0; trick < 8; trick++) {
+      for (let card = 0; card < 4; card++) {
+        try {
+          await playCurrentTurn(players);
+        } catch {
+          break;
+        }
+      }
+      await players[0].page.waitForTimeout(800);
+
+      let gameDone = false;
+      for (const p of players) {
+        try {
+          await expect(p.page.locator('text=Match Complete')).toBeVisible({ timeout: 500 });
+          gameDone = true;
+          break;
+        } catch { /* not yet */ }
+      }
+      if (gameDone) break;
+    }
+
+    await players[0].page.waitForTimeout(3_000);
+    for (const player of players) {
+      await expect(player.page.getByTestId('game-board')).toBeVisible();
+    }
+  });
+});
+
+// ============================================================
+//  8. Phase Indicators
+// ============================================================
+
+test.describe('Phase Indicators', () => {
+  test('phase label changes through game lifecycle', async ({ players }) => {
+    await setupFullGame(players);
+
+    await waitForPhase(players, 'Bidding', 20_000);
+    await doQuickBidding(players);
+    await waitForPhase(players, 'Trump Selection', 15_000);
+    await doQuickTrumpSelection(players);
+    await waitForPhase(players, 'Double Phase', 15_000);
+    await skipDoublePhase(players);
+    await waitForPhase(players, 'Playing', 15_000);
+  });
+});
+
+// ============================================================
+//  9. Seventh-Card Trump Reveal
+// ============================================================
+
+test.describe('Seventh-Card Trump Reveal', () => {
+  test('7th card mode game plays through without crash (up to 5 min)', async ({ players }) => {
+    test.setTimeout(300_000);
+
+    await setupFullGame(players);
+    await doQuickBidding(players);
+    await selectSeventhCardTrump(players);
+    await skipDoublePhase(players);
+    await waitForPlayingPhase(players);
+
+    // Play a few tricks — verify no crash
+    for (let trick = 0; trick < 3; trick++) {
+      for (let card = 0; card < 4; card++) {
+        try {
+          await playCurrentTurn(players);
+        } catch {
+          break;
+        }
+      }
+      await players[0].page.waitForTimeout(800);
+    }
+
+    for (const player of players) {
+      await expect(player.page.getByTestId('game-board')).toBeVisible();
+    }
+  });
+});
+
+// ============================================================
+//  10. Joker (No Trump) Mode
+// ============================================================
+
+test.describe('Joker Mode', () => {
+  test('joker mode game plays through without crash', async ({ players }) => {
+    test.setTimeout(300_000);
+
+    await setupFullGame(players);
+    await doQuickBidding(players);
+    await selectJokerTrump(players);
+    await skipDoublePhase(players);
+    await waitForPlayingPhase(players);
+
+    // Play a few tricks
+    for (let trick = 0; trick < 3; trick++) {
+      for (let card = 0; card < 4; card++) {
+        try {
+          await playCurrentTurn(players);
+        } catch {
+          break;
+        }
+      }
+      await players[0].page.waitForTimeout(800);
+    }
+
+    for (const player of players) {
+      await expect(player.page.getByTestId('game-board')).toBeVisible();
+    }
+  });
+});

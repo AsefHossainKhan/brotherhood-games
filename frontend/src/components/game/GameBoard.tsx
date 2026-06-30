@@ -9,14 +9,16 @@ import { ScoreBoard } from './ScoreBoard';
 import { BidPanel } from '@/components/games/twenty-nine/BidPanel';
 import { TrumpSelector } from '@/components/games/twenty-nine/TrumpSelector';
 import { DoublePanel } from '@/components/games/twenty-nine/DoublePanel';
+import { WeakHandPanel } from '@/components/games/twenty-nine/WeakHandPanel';
 import { GameStatus } from '@/components/games/twenty-nine/GameStatus';
 
 export function GameBoard() {
-  const { phase, players, myPlayer, isMyTurn, score } = useGame();
+  const { phase, players, myPlayer, isMyTurn, score, weakHandPlayer } = useGame();
 
   useSocket();
 
   // Determine which action panel to show
+  const showWeakHandPanel = weakHandPlayer === myPlayer?.id;
   const showBidPanel = phase === 'BIDDING' && isMyTurn;
   const showTrumpSelector = phase === 'TRUMP_SELECTION' && myPlayer?.isDeclarer;
   const showDoublePanel = phase === 'DOUBLE_PHASE';
@@ -46,9 +48,10 @@ export function GameBoard() {
 
         {/* Action panels */}
         <div className="flex gap-4">
-          {showBidPanel && <BidPanel />}
-          {showTrumpSelector && <TrumpSelector />}
-          {showDoublePanel && <DoublePanel />}
+          {showWeakHandPanel && <div data-testid="weak-hand-panel"><WeakHandPanel /></div>}
+          {showBidPanel && <div data-testid="bid-panel"><BidPanel /></div>}
+          {showTrumpSelector && <div data-testid="trump-selector"><TrumpSelector /></div>}
+          {showDoublePanel && <div data-testid="double-panel"><DoublePanel /></div>}
         </div>
       </div>
 

@@ -115,6 +115,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
         return this.handleStartGame(newState, broadcasts);
       case 'CANCEL_WEAK_HAND':
         return this.handleCancelWeakHand(newState, action.playerId, broadcasts);
+      case 'KEEP_WEAK_HAND':
+        return this.handleKeepWeakHand(newState, action.playerId, broadcasts);
       case 'PLACE_BID':
         return this.handlePlaceBid(newState, action.playerId, action.payload.bid as number, broadcasts);
       case 'PASS_BID':
@@ -131,6 +133,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
         return this.handleDeclareDouble(newState, action.playerId, 'redouble', broadcasts);
       case 'DECLARE_FULLSET':
         return this.handleDeclareDouble(newState, action.playerId, 'fullset', broadcasts);
+      case 'PASS_DOUBLE':
+        return this.handlePassDouble(newState, action.playerId, broadcasts);
       case 'PLAY_CARD':
         return this.handlePlayCard(newState, action.playerId, action.payload.cardIndex as number, broadcasts);
       case 'REQUEST_TRUMP_REVEAL':
@@ -146,6 +150,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
         return { valid: state.phase === GAME_PHASES.WAITING_FOR_PLAYERS };
       case 'CANCEL_WEAK_HAND':
         return this.validateCancelWeakHand(state, action.playerId);
+      case 'KEEP_WEAK_HAND':
+        return this.validateCancelWeakHand(state, action.playerId);
       case 'PLACE_BID':
         return this.validatePlaceBid(state, action.playerId, action.payload.bid as number);
       case 'PASS_BID':
@@ -158,6 +164,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       case 'DECLARE_REDOUBLE':
       case 'DECLARE_FULLSET':
         return this.validateDouble(state, action.playerId, action.type.replace('DECLARE_', '').toLowerCase() as DoubleLevel);
+      case 'PASS_DOUBLE':
+        return this.validatePassDouble(state, action.playerId);
       case 'PLAY_CARD':
         return this.validatePlayCard(state, action.playerId, action.payload.cardIndex as number);
       case 'REQUEST_TRUMP_REVEAL':
@@ -197,7 +205,13 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
         seventhCard: isDeclarer ? state.trump.seventhCard : null,
       },
       double: state.double,
-      currentTrick: state.currentTrick,
+      currentTrick: {
+        ...state.currentTrick,
+        plays: state.currentTrick.plays.map((p) => ({
+          playerId: p.playerId,
+          cardId: `${p.card.suit}_${p.card.rank}`,
+        })),
+      },
       completedTricks: state.completedTricks.map((t) => ({
         trickNumber: t.trickNumber,
         winnerId: t.winnerId,
@@ -292,54 +306,62 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       return { newState: state, broadcasts, errors: [{ code: 'NOT_WEAK_HAND_PLAYER', message: 'Not your weak hand decision' }] };
     }
 
-    if (state.weakHandRequested) {
-      // Player confirms cancellation — re-deal
-      state.deck = shuffleDeck(buildDeck());
-      const { hands, remaining } = firstDeal(state.deck, 4);
-      state.deck = remaining;
-      state.dealCount = 4;
+    // Player requests re-deal
+    state.deck = shuffleDeck(buildDeck());
+    const { hands, remaining } = firstDeal(state.deck, 4);
+    state.deck = remaining;
+    state.dealCount = 4;
 
-      for (let i = 0; i < 4; i++) {
-        state.players[i].hand = hands[i];
-      }
+    for (let i = 0; i < 4; i++) {
+      state.players[i].hand = hands[i];
+    }
 
-      state.weakHandPlayer = null;
-      state.weakHandRequested = false;
+    state.weakHandPlayer = null;
+    state.weakHandRequested = false;
 
+    broadcasts.push({
+      event: 'HANDS_REDEALT',
+      payload: {},
+    });
+
+    // Send new hands
+    for (const player of state.players) {
       broadcasts.push({
-        event: 'HANDS_REDEALT',
-        payload: {},
+        event: 'FIRST_DEAL_COMPLETED',
+        payload: { hand: player.hand },
+        targetPlayerIds: [player.id],
       });
+    }
 
-      // Send new hands
-      for (const player of state.players) {
+    // Check for weak hands again
+    for (const player of state.players) {
+      if (canCancelWeakHand(player.hand)) {
+        state.weakHandPlayer = player.id;
         broadcasts.push({
-          event: 'FIRST_DEAL_COMPLETED',
-          payload: { hand: player.hand },
+          event: 'WEAK_HAND_DETECTED',
+          payload: { playerId: player.id },
           targetPlayerIds: [player.id],
         });
+        return { newState: state, broadcasts };
       }
-
-      // Check for weak hands again
-      for (const player of state.players) {
-        if (canCancelWeakHand(player.hand)) {
-          state.weakHandPlayer = player.id;
-          broadcasts.push({
-            event: 'WEAK_HAND_DETECTED',
-            payload: { playerId: player.id },
-            targetPlayerIds: [player.id],
-          });
-          return { newState: state, broadcasts };
-        }
-      }
-
-      return this.startBidding(state, broadcasts);
-    } else {
-      // Player declines cancellation — proceed to bidding
-      state.weakHandPlayer = null;
-      state.weakHandRequested = false;
-      return this.startBidding(state, broadcasts);
     }
+
+    return this.startBidding(state, broadcasts);
+  }
+
+  private handleKeepWeakHand(
+    state: TwentyNineState,
+    playerId: string,
+    broadcasts: Broadcast[]
+  ): ActionResult<TwentyNineState> {
+    if (state.weakHandPlayer !== playerId) {
+      return { newState: state, broadcasts, errors: [{ code: 'NOT_WEAK_HAND_PLAYER', message: 'Not your weak hand decision' }] };
+    }
+
+    // Player keeps the weak hand — proceed to bidding
+    state.weakHandPlayer = null;
+    state.weakHandRequested = false;
+    return this.startBidding(state, broadcasts);
   }
 
   private startBidding(state: TwentyNineState, broadcasts: Broadcast[]): ActionResult<TwentyNineState> {
@@ -436,9 +458,13 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     broadcasts: Broadcast[]
   ): ActionResult<TwentyNineState> {
     // Check if bidding is complete
-    // Bidding completes when all 4 players have bid OR 3 have passed and one has bid
+    // Case 1: All 4 players passed — redeal
+    if (state.bidding.passCount >= 4) {
+      return this.finishBidding(state, broadcasts);
+    }
+
+    // Case 2: 3 players passed and one has bid — bidding finished
     if (state.bidding.passCount >= 3 && state.bidding.highestBidder) {
-      // Bidding finished
       return this.finishBidding(state, broadcasts);
     }
 
@@ -520,26 +546,21 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       return { newState: state, broadcasts, errors: [{ code: 'PLAYER_NOT_FOUND', message: 'Player not found' }] };
     }
 
-    const result = selectSeventhCardTrump(player.hand);
+    // Seventh-card trump: the trump suit is determined by the 7th card
+    // in the declarer's FINAL 8-card hand. At this point only 4 cards are
+    // dealt, so we defer the actual determination until after the second deal.
     state.trump = {
       type: 'seventh-card',
-      suit: result.suit,
+      suit: null, // Will be set after second deal
       isRevealed: false,
-      seventhCard: result.seventhCard,
+      seventhCard: null, // Will be set after second deal
       revealedBy: null,
     };
 
     broadcasts.push({
       event: 'TRUMP_SELECTED',
       payload: { type: 'seventh-card' },
-      // Don't reveal the suit to others
-    });
-
-    // Tell the declarer the actual trump
-    broadcasts.push({
-      event: 'TRUMP_HIDDEN',
-      payload: { suit: result.suit, seventhCard: result.seventhCard },
-      targetPlayerIds: [playerId],
+      // Don't reveal the suit to others yet
     });
 
     return this.proceedToSecondDeal(state, broadcasts);
@@ -581,6 +602,21 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       state.players[i].hand = hands[i];
     }
 
+    // If seventh-card trump mode, now determine the actual trump from the 7th card
+    if (state.trump.type === 'seventh-card') {
+      const declarer = state.players.find((p) => p.isDeclarer)!;
+      const result = selectSeventhCardTrump(declarer.hand);
+      state.trump.suit = result.suit;
+      state.trump.seventhCard = result.seventhCard;
+
+      // Tell the declarer the actual trump (private info)
+      broadcasts.push({
+        event: 'TRUMP_HIDDEN',
+        payload: { suit: result.suit, seventhCard: result.seventhCard },
+        targetPlayerIds: [declarer.id],
+      });
+    }
+
     // Send updated hands
     for (const player of state.players) {
       broadcasts.push({
@@ -590,14 +626,40 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       });
     }
 
+    // Check for marriage with normal suit trump (already revealed)
+    // For seventh-card trump, marriage will be checked on reveal
+    // For joker, marriage is disabled
+    if (state.trump.type === 'suit' && state.trump.suit) {
+      for (const player of state.players) {
+        const marriageSuit = detectMarriage(player.hand, state.trump.suit);
+        if (marriageSuit) {
+          const declarer = state.players.find((p) => p.isDeclarer)!;
+          // Only the first player found with marriage counts (typically the holder)
+          // Marriage on the bidding team lowers effective bid; on defending team raises it
+          const effectiveBid = calculateEffectiveBid(
+            state.bidding.highestBid!,
+            player.team,
+            declarer.team
+          );
+          state.marriage = {
+            team: player.team,
+            suit: marriageSuit,
+            effectiveBid,
+          };
+          broadcasts.push({
+            event: 'MARRIAGE_DECLARED',
+            payload: { playerId: player.id, suit: marriageSuit, effectiveBid },
+          });
+          break; // Only one marriage can be declared
+        }
+      }
+    }
+
     // Proceed to double phase
     state.phase = GAME_PHASES.DOUBLE_PHASE;
 
     // Double phase: opponents of declarer can call double first
     const declarer = state.players.find((p) => p.isDeclarer)!;
-    const opponentSeat = (declarer.seat + 1) % 2 === 0
-      ? (declarer.seat + 1) % 4
-      : (declarer.seat + 2) % 4;
 
     // For simplicity, any opponent can call double
     // We'll let the first opponent in turn order act
@@ -634,19 +696,87 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       payload: { playerId, level, multiplier: state.double.multiplier },
     });
 
-    // If full set, proceed to playing
+    // After a declaration, the other side gets a chance to respond
+    // Reset pass tracking for the response round
+    state._doublePasses = [];
+
     if (level === 'fullset') {
+      // Full set is the end of the chain — proceed to playing
       return this.startPlaying(state, broadcasts);
     }
 
-    // Otherwise, move to next player who can respond
+    // Move to next player who can respond
     const nextSeat = level === 'double'
-      ? this.getNextTeammateSeat(state, declarer.seat) // Re-double: declarer's team
-      : this.getNextOpponentSeat(state, declarer.seat); // Full set: opponents
+      ? this.getNextTeammateSeat(state, declarer.seat) // Re-double: declarer's team responds
+      : this.getNextOpponentSeat(state, declarer.seat); // Full set: opponents respond
 
     state.currentTurn = nextSeat;
 
     return { newState: state, broadcasts };
+  }
+
+  private handlePassDouble(
+    state: TwentyNineState,
+    playerId: string,
+    broadcasts: Broadcast[]
+  ): ActionResult<TwentyNineState> {
+    const player = state.players.find((p) => p.id === playerId);
+    if (!player) {
+      return { newState: state, broadcasts, errors: [{ code: 'PLAYER_NOT_FOUND', message: 'Player not found' }] };
+    }
+
+    // Track passes
+    if (!state._doublePasses) state._doublePasses = [];
+    state._doublePasses.push(playerId);
+
+    broadcasts.push({
+      event: 'DOUBLE_PASSED',
+      payload: { playerId },
+    });
+
+    const declarer = state.players.find((p) => p.isDeclarer)!;
+    const declarerTeam = declarer.team;
+    const callerTeam = player.team;
+
+    // Determine who can respond next based on current double level
+    if (state.double.level === 'normal') {
+      // Opponents are deciding whether to double
+      // Find the other opponent who hasn't passed yet
+      const otherOpponent = state.players.find(
+        (p) => p.team !== declarerTeam && p.id !== playerId && !state._doublePasses!.includes(p.id)
+      );
+      if (otherOpponent) {
+        state.currentTurn = otherOpponent.seat;
+        return { newState: state, broadcasts };
+      }
+      // Both opponents passed — proceed to playing (no double)
+      return this.startPlaying(state, broadcasts);
+    } else if (state.double.level === 'double') {
+      // Declarer's team is deciding whether to re-double
+      const otherTeammate = state.players.find(
+        (p) => p.team === declarerTeam && p.id !== playerId && !state._doublePasses!.includes(p.id)
+      );
+      if (otherTeammate) {
+        state.currentTurn = otherTeammate.seat;
+        return { newState: state, broadcasts };
+      }
+      // Both teammates passed — proceed to playing (doubled)
+      return this.startPlaying(state, broadcasts);
+    } else if (state.double.level === 'redouble') {
+      // Opponents are deciding whether to full-set
+      const otherOpponent = state.players.find(
+        (p) => p.team !== declarerTeam && p.id !== playerId && !state._doublePasses!.includes(p.id)
+      );
+      if (otherOpponent) {
+        state.currentTurn = otherOpponent.seat;
+        return { newState: state, broadcasts };
+      }
+      // Both opponents passed — proceed to playing (re-doubled)
+      return this.startPlaying(state, broadcasts);
+    }
+
+    // Fallback: proceed to playing
+    return this.startPlaying(state, broadcasts);
   }
 
   private startPlaying(
@@ -953,6 +1083,14 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     if (!player) return { valid: false, error: 'Player not found' };
     const declarer = state.players.find((p) => p.isDeclarer)!;
     if (!canDeclareDouble(level, state.double.level, player.team, declarer.team)) return { valid: false, error: `Cannot declare ${level}` };
+    return { valid: true };
+  }
+
+  private validatePassDouble(state: TwentyNineState, playerId: string): { valid: boolean; error?: string } {
+    if (state.phase !== GAME_PHASES.DOUBLE_PHASE) return { valid: false, error: 'Not in double phase' };
+    const player = state.players.find((p) => p.id === playerId);
+    if (!player) return { valid: false, error: 'Player not found' };
+    if (player.seat !== state.currentTurn) return { valid: false, error: 'Not your turn' };
     return { valid: true };
   }
 

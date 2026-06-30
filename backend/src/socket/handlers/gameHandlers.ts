@@ -78,6 +78,7 @@ export function handleGameEvents(io: Server, socket: Socket, runtime: GameRuntim
   socket.on('DECLARE_DOUBLE', () => handleAction('DECLARE_DOUBLE'));
   socket.on('DECLARE_REDOUBLE', () => handleAction('DECLARE_REDOUBLE'));
   socket.on('DECLARE_FULLSET', () => handleAction('DECLARE_FULLSET'));
+  socket.on('PASS_DOUBLE', () => handleAction('PASS_DOUBLE'));
 
   // Playing
   socket.on('PLAY_CARD', (data: { cardIndex: number }) => handleAction('PLAY_CARD', { cardIndex: data.cardIndex }));
@@ -87,4 +88,5 @@ export function handleGameEvents(io: Server, socket: Socket, runtime: GameRuntim
 
   // Weak hand
   socket.on('CANCEL_WEAK_HAND', () => handleAction('CANCEL_WEAK_HAND'));
+  socket.on('KEEP_WEAK_HAND', () => handleAction('KEEP_WEAK_HAND'));
 }

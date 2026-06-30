@@ -124,4 +124,7 @@ export interface TwentyNineState {
   // Metadata
   matchId: string;
   startedAt: number;
+
+  // Internal tracking for double phase passes
+  _doublePasses?: string[];
 }

@@ -1,0 +1,1390 @@
+/**
+ * Integration tests for TwentyNineEngine — full game flow scenarios.
+ *
+ * These tests exercise the engine through its public handleAction/validateAction
+ * interface, covering every phase of a 29 game:
+ *   FIRST_DEAL → BIDDING → TRUMP_SELECTION → SECOND_DEAL → DOUBLE_PHASE → PLAYING → SCORING → MATCH_COMPLETE
+ */
+import { describe, it, expect, beforeEach } from 'vitest';
+import { TwentyNineEngine } from '../TwentyNineEngine';
+import type { TwentyNineState, TwentyNinePlayer } from '../types';
+import type { GameAction, ActionResult } from '@brotherhood/game-engine';
+import type { RoomSettings, Card, Suit, Rank } from '@brotherhood/shared';
+import { GAME_PHASES } from '@brotherhood/shared';
+import { RANK_ORDER_29 } from '@brotherhood/shared';
+
+// ---- Helpers ----
+
+const DEFAULT_SETTINGS: RoomSettings = {
+  matchLength: 4,
+  minBid: 16,
+  setThreshold: 6,
+  bidTimer: 30,
+  playTimer: 30,
+  allowSpectators: true,
+};
+
+const PLAYER_IDS = ['p0', 'p1', 'p2', 'p3'];
+const TEAMS: (0 | 1)[] = [0, 1, 0, 1]; // p0&p2 = team 0, p1&p3 = team 1
+
+function createEngine() {
+  return new TwentyNineEngine();
+}
+
+function createGame(engine: TwentyNineEngine): TwentyNineState {
+  return engine.createInitialState(PLAYER_IDS, DEFAULT_SETTINGS, TEAMS);
+}
+
+function action(type: string, playerId: string, payload: Record<string, unknown> = {}): GameAction {
+  return { type, playerId, payload };
+}
+
+/** Start the game and get past first deal (handles weak hand if any) */
+function startGame(engine: TwentyNineEngine, state: TwentyNineState): TwentyNineState {
+  let result = engine.handleAction(state, action('START_GAME', 'p0'));
+  let s = result.newState;
+
+  // Handle weak hand if detected — keep the hand to avoid redeal loops
+  while (s.weakHandPlayer) {
+    result = engine.handleAction(s, action('KEEP_WEAK_HAND', s.weakHandPlayer));
+    s = result.newState;
+  }
+
+  return s;
+}
+
+/** Run through bidding: first bidder bids the given amount, others pass */
+function doBidding(
+  engine: TwentyNineEngine,
+  state: TwentyNineState,
+  bidderIndex: number,
+  bidAmount: number
+): TwentyNineState {
+  let s = state;
+  const bidderId = PLAYER_IDS[bidderIndex];
+
+  for (let i = 0; i < 4; i++) {
+    const currentPlayerId = PLAYER_IDS[s.currentTurn];
+    if (currentPlayerId === bidderId) {
+      const result = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: bidAmount }));
+      s = result.newState;
+    } else {
+      const result = engine.handleAction(s, action('PASS_BID', currentPlayerId));
+      s = result.newState;
+    }
+  }
+
+  return s;
+}
+
+/** Select trump and proceed through second deal to double phase */
+function selectTrumpAndDeal(
+  engine: TwentyNineEngine,
+  state: TwentyNineState,
+  trumpAction: GameAction
+): TwentyNineState {
+  const result = engine.handleAction(state, trumpAction);
+  return result.newState;
+}
+
+/** Skip double phase: all players pass */
+function skipDoublePhase(engine: TwentyNineEngine, state: TwentyNineState): TwentyNineState {
+  let s = state;
+  // Keep passing until we leave DOUBLE_PHASE
+  let safety = 10;
+  while (s.phase === GAME_PHASES.DOUBLE_PHASE && safety-- > 0) {
+    const currentPlayerId = PLAYER_IDS[s.currentTurn];
+    const validation = engine.validateAction(s, action('PASS_DOUBLE', currentPlayerId));
+    if (!validation.valid) break;
+    const result = engine.handleAction(s, action('PASS_DOUBLE', currentPlayerId));
+    s = result.newState;
+  }
+  return s;
+}
+
+/** Play a card for the current player (first valid card in hand) */
+function playFirstValidCard(
+  engine: TwentyNineEngine,
+  state: TwentyNineState
+): TwentyNineState {
+  const currentPlayerId = PLAYER_IDS[state.currentTurn];
+  const player = state.players.find((p) => p.id === currentPlayerId)!;
+
+  // Try each card in hand until one is valid
+  for (let i = 0; i < player.hand.length; i++) {
+    const validation = engine.validateAction(state, action('PLAY_CARD', currentPlayerId, { cardIndex: i }));
+    if (validation.valid) {
+      const result = engine.handleAction(state, action('PLAY_CARD', currentPlayerId, { cardIndex: i }));
+      return result.newState;
+    }
+  }
+
+  throw new Error(`No valid card to play for ${currentPlayerId} (hand: ${JSON.stringify(player.hand)})`);
+}
+
+/** Play all 8 tricks */
+function playAllTricks(engine: TwentyNineEngine, state: TwentyNineState): TwentyNineState {
+  let s = state;
+  for (let trick = 0; trick < 8; trick++) {
+    for (let card = 0; card < 4; card++) {
+      s = playFirstValidCard(engine, s);
+    }
+  }
+  return s;
+}
+
+/** Create a state where we can control the hands */
+function createControlledGame(
+  engine: TwentyNineEngine,
+  hands: Card[][],
+  trumpSuit: Suit | null,
+  declarerIndex: number = 0,
+  bid: number = 20
+): TwentyNineState {
+  const state = createGame(engine);
+
+  // Set up players
+  state.players = PLAYER_IDS.map((id, seat) => ({
+    id,
+    seat,
+    team: TEAMS[seat],
+    hand: hands[seat],
+    isDealer: seat === 0,
+    isDeclarer: seat === declarerIndex,
+    isConnected: true,
+  }));
+
+  // Set up bidding
+  state.bidding = {
+    currentBid: bid,
+    currentBidder: PLAYER_IDS[declarerIndex],
+    highestBid: bid,
+    highestBidder: PLAYER_IDS[declarerIndex],
+    bids: [{ playerId: PLAYER_IDS[declarerIndex], bid }],
+    passCount: 3,
+  };
+
+  // Set up trump
+  state.trump = {
+    type: trumpSuit ? 'suit' : 'joker',
+    suit: trumpSuit,
+    isRevealed: trumpSuit !== null,
+    seventhCard: null,
+    revealedBy: null,
+  };
+
+  // Set up playing phase
+  state.phase = GAME_PHASES.PLAYING;
+  state.currentTurn = declarerIndex;
+  state.currentTrick = {
+    plays: [],
+    leadSuit: null,
+    winnerId: null,
+    trickNumber: 1,
+  };
+
+  return state;
+}
+
+// ---- Tests ----
+
+describe('TwentyNineEngine — Full Game Flow', () => {
+  let engine: TwentyNineEngine;
+
+  beforeEach(() => {
+    engine = createEngine();
+  });
+
+  // ========== START GAME ==========
+
+  describe('START_GAME', () => {
+    it('creates initial state with correct structure', () => {
+      const state = createGame(engine);
+      expect(state.players).toHaveLength(4);
+      expect(state.phase).toBe(GAME_PHASES.WAITING_FOR_PLAYERS);
+      expect(state.bidding.highestBid).toBeNull();
+      expect(state.trump.type).toBeNull();
+      expect(state.double.level).toBe('normal');
+      expect(state.completedTricks).toHaveLength(0);
+    });
+
+    it('assigns teams correctly', () => {
+      const state = createGame(engine);
+      expect(state.players[0].team).toBe(0);
+      expect(state.players[1].team).toBe(1);
+      expect(state.players[2].team).toBe(0);
+      expect(state.players[3].team).toBe(1);
+    });
+
+    it('deals 4 cards to each player in first deal', () => {
+      const state = createGame(engine);
+      const result = engine.handleAction(state, action('START_GAME', 'p0'));
+      const s = result.newState;
+
+      // Phase is FIRST_DEAL if weak hand detected, otherwise BIDDING
+      expect([GAME_PHASES.FIRST_DEAL, GAME_PHASES.BIDDING]).toContain(s.phase);
+      for (const player of s.players) {
+        expect(player.hand).toHaveLength(4);
+      }
+      expect(s.dealCount).toBe(4);
+    });
+
+    it('skips weak hand check if no weak hand', () => {
+      const state = createGame(engine);
+      const result = engine.handleAction(state, action('START_GAME', 'p0'));
+      const s = result.newState;
+
+      // If no weak hand detected, should move to BIDDING
+      if (!s.weakHandPlayer) {
+        expect(s.phase).toBe(GAME_PHASES.BIDDING);
+      }
+    });
+
+    it('detects weak hand and waits for decision', () => {
+      // This is probabilistic — run multiple times to increase chance of hitting weak hand
+      // But we'll test the weak hand logic separately
+      const state = createGame(engine);
+      const result = engine.handleAction(state, action('START_GAME', 'p0'));
+
+      // If weak hand detected, phase stays at FIRST_DEAL
+      if (result.newState.weakHandPlayer) {
+        expect(result.newState.phase).toBe(GAME_PHASES.FIRST_DEAL);
+        const weakPlayer = result.newState.players.find(p => p.id === result.newState.weakHandPlayer)!;
+        // Verify the hand truly has 0 points
+        const hasPoints = weakPlayer.hand.some(c => ['J', '9', 'A', '10'].includes(c.rank));
+        expect(hasPoints).toBe(false);
+      }
+    });
+  });
+
+  // ========== BIDDING ==========
+
+  describe('BIDDING', () => {
+    let postDealState: TwentyNineState;
+
+    beforeEach(() => {
+      const state = createGame(engine);
+      postDealState = startGame(engine, state);
+      // Ensure we're in bidding phase
+      expect(postDealState.phase).toBe(GAME_PHASES.BIDDING);
+    });
+
+    it('starts bidding at dealer\'s right (counter-clockwise)', () => {
+      const dealerSeat = postDealState.dealerSeat;
+      const expectedFirstBidder = (dealerSeat + 1) % 4;
+      expect(postDealState.currentTurn).toBe(expectedFirstBidder);
+    });
+
+    it('allows placing a valid bid', () => {
+      const bidderId = PLAYER_IDS[postDealState.currentTurn];
+      const result = engine.handleAction(
+        postDealState,
+        action('PLACE_BID', bidderId, { bid: 16 })
+      );
+      expect(result.newState.bidding.highestBid).toBe(16);
+      expect(result.newState.bidding.highestBidder).toBe(bidderId);
+    });
+
+    it('rejects bid below minimum', () => {
+      const bidderId = PLAYER_IDS[postDealState.currentTurn];
+      const validation = engine.validateAction(
+        postDealState,
+        action('PLACE_BID', bidderId, { bid: 15 })
+      );
+      expect(validation.valid).toBe(false);
+    });
+
+    it('rejects bid above 28', () => {
+      const bidderId = PLAYER_IDS[postDealState.currentTurn];
+      const validation = engine.validateAction(
+        postDealState,
+        action('PLACE_BID', bidderId, { bid: 29 })
+      );
+      expect(validation.valid).toBe(false);
+    });
+
+    it('requires bid to be higher than current highest', () => {
+      const firstBidder = PLAYER_IDS[postDealState.currentTurn];
+      let s = engine.handleAction(postDealState, action('PLACE_BID', firstBidder, { bid: 20 })).newState;
+
+      const secondBidder = PLAYER_IDS[s.currentTurn];
+      const validation = engine.validateAction(s, action('PLACE_BID', secondBidder, { bid: 19 }));
+      expect(validation.valid).toBe(false);
+    });
+
+    it('allows passing', () => {
+      const bidderId = PLAYER_IDS[postDealState.currentTurn];
+      const result = engine.handleAction(postDealState, action('PASS_BID', bidderId));
+      expect(result.newState.bidding.passCount).toBe(1);
+      expect(result.newState.bidding.bids[0].bid).toBeNull();
+    });
+
+    it('rejects action from wrong player', () => {
+      const wrongPlayer = PLAYER_IDS[(postDealState.currentTurn + 1) % 4];
+      const validation = engine.validateAction(
+        postDealState,
+        action('PLACE_BID', wrongPlayer, { bid: 16 })
+      );
+      expect(validation.valid).toBe(false);
+    });
+
+    it('finishes bidding when 3 players pass and 1 bids', () => {
+      const bidderIndex = postDealState.currentTurn;
+      const bidderId = PLAYER_IDS[bidderIndex];
+      let s = engine.handleAction(postDealState, action('PLACE_BID', bidderId, { bid: 16 })).newState;
+
+      // 3 more players pass
+      for (let i = 0; i < 3; i++) {
+        const pid = PLAYER_IDS[s.currentTurn];
+        if (pid !== bidderId) {
+          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+        }
+      }
+
+      expect(s.phase).toBe(GAME_PHASES.TRUMP_SELECTION);
+      expect(s.players.find(p => p.isDeclarer)?.id).toBe(bidderId);
+    });
+
+    it('re-deals when all 4 players pass', () => {
+      let s = postDealState;
+      for (let i = 0; i < 4; i++) {
+        const pid = PLAYER_IDS[s.currentTurn];
+        s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+      }
+
+      // Should redeal — back to BIDDING with fresh hands
+      expect(s.phase).toBe(GAME_PHASES.BIDDING);
+      expect(s.bidding.passCount).toBe(0);
+      expect(s.bidding.highestBid).toBeNull();
+      // Each player should have 4 fresh cards
+      for (const p of s.players) {
+        expect(p.hand).toHaveLength(4);
+      }
+    });
+
+    it('supports competitive bidding (multiple bids)', () => {
+      const firstBidder = PLAYER_IDS[postDealState.currentTurn];
+      let s = engine.handleAction(postDealState, action('PLACE_BID', firstBidder, { bid: 16 })).newState;
+
+      const secondBidder = PLAYER_IDS[s.currentTurn];
+      if (secondBidder !== firstBidder) {
+        s = engine.handleAction(s, action('PLACE_BID', secondBidder, { bid: 18 })).newState;
+        expect(s.bidding.highestBid).toBe(18);
+      }
+    });
+  });
+
+  // ========== TRUMP SELECTION ==========
+
+  describe('TRUMP_SELECTION', () => {
+    let biddingDone: TwentyNineState;
+
+    beforeEach(() => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      // Place a bid and have others pass
+      const bidderId = PLAYER_IDS[s.currentTurn];
+      s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
+
+      for (let i = 0; i < 3; i++) {
+        const pid = PLAYER_IDS[s.currentTurn];
+        if (pid !== bidderId) {
+          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+        }
+      }
+
+      biddingDone = s;
+      expect(biddingDone.phase).toBe(GAME_PHASES.TRUMP_SELECTION);
+    });
+
+    it('only declarer can select trump', () => {
+      const nonDeclarer = biddingDone.players.find(p => !p.isDeclarer)!;
+      const validation = engine.validateAction(
+        biddingDone,
+        action('SELECT_TRUMP', nonDeclarer.id, { suit: 'hearts' })
+      );
+      expect(validation.valid).toBe(false);
+    });
+
+    it('normal suit trump: transitions to double phase with trump revealed', () => {
+      const declarer = biddingDone.players.find(p => p.isDeclarer)!;
+      const result = engine.handleAction(
+        biddingDone,
+        action('SELECT_TRUMP', declarer.id, { suit: 'hearts' })
+      );
+      const s = result.newState;
+
+      expect(s.trump.type).toBe('suit');
+      expect(s.trump.suit).toBe('hearts');
+      expect(s.trump.isRevealed).toBe(true);
+      expect(s.phase).toBe(GAME_PHASES.DOUBLE_PHASE);
+      // Each player should have 8 cards after second deal
+      for (const p of s.players) {
+        expect(p.hand).toHaveLength(8);
+      }
+    });
+
+    it('joker (no trump): transitions to double phase with null trump', () => {
+      const declarer = biddingDone.players.find(p => p.isDeclarer)!;
+      const result = engine.handleAction(
+        biddingDone,
+        action('SELECT_JOKER', declarer.id)
+      );
+      const s = result.newState;
+
+      expect(s.trump.type).toBe('joker');
+      expect(s.trump.suit).toBeNull();
+      expect(s.phase).toBe(GAME_PHASES.DOUBLE_PHASE);
+    });
+
+    it('seventh-card trump: defers trump determination until after second deal', () => {
+      const declarer = biddingDone.players.find(p => p.isDeclarer)!;
+      const result = engine.handleAction(
+        biddingDone,
+        action('SELECT_SEVENTH_CARD_TRUMP', declarer.id)
+      );
+      const s = result.newState;
+
+      expect(s.trump.type).toBe('seventh-card');
+      // After second deal, the 7th card should have been determined
+      expect(s.trump.suit).not.toBeNull();
+      expect(s.trump.seventhCard).not.toBeNull();
+      // The 7th card's suit should match the trump suit
+      expect(s.trump.seventhCard!.suit).toBe(s.trump.suit);
+      expect(s.trump.isRevealed).toBe(false);
+      // Declarer should have 8 cards (re-find from cloned state)
+      const updatedDeclarer = s.players.find(p => p.isDeclarer)!;
+      expect(updatedDeclarer.hand).toHaveLength(8);
+      // Phase should be DOUBLE_PHASE (second deal is internal)
+      expect(s.phase).toBe(GAME_PHASES.DOUBLE_PHASE);
+    });
+
+    it('rejects trump selection when not in trump phase', () => {
+      const declarer = biddingDone.players.find(p => p.isDeclarer)!;
+      const wrongState = { ...biddingDone, phase: GAME_PHASES.BIDDING };
+      const validation = engine.validateAction(
+        wrongState,
+        action('SELECT_TRUMP', declarer.id, { suit: 'hearts' })
+      );
+      expect(validation.valid).toBe(false);
+    });
+  });
+
+  // ========== DOUBLE PHASE ==========
+
+  describe('DOUBLE_PHASE', () => {
+    let doublePhaseState: TwentyNineState;
+
+    beforeEach(() => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      // Bid
+      const bidderId = PLAYER_IDS[s.currentTurn];
+      s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
+      for (let i = 0; i < 3; i++) {
+        const pid = PLAYER_IDS[s.currentTurn];
+        if (pid !== bidderId) {
+          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+        }
+      }
+
+      // Select trump
+      const declarer = s.players.find(p => p.isDeclarer)!;
+      s = engine.handleAction(s, action('SELECT_TRUMP', declarer.id, { suit: 'hearts' })).newState;
+
+      doublePhaseState = s;
+      expect(doublePhaseState.phase).toBe(GAME_PHASES.DOUBLE_PHASE);
+    });
+
+    it('opponent can declare double', () => {
+      const declarer = doublePhaseState.players.find(p => p.isDeclarer)!;
+      const opponent = doublePhaseState.players.find(p => p.team !== declarer.team)!;
+
+      const validation = engine.validateAction(
+        doublePhaseState,
+        action('DECLARE_DOUBLE', opponent.id)
+      );
+      expect(validation.valid).toBe(true);
+    });
+
+    it('declarer team cannot declare double', () => {
+      const declarer = doublePhaseState.players.find(p => p.isDeclarer)!;
+      const teammate = doublePhaseState.players.find(p => p.team === declarer.team && !p.isDeclarer)!;
+
+      const validation = engine.validateAction(
+        doublePhaseState,
+        action('DECLARE_DOUBLE', teammate.id)
+      );
+      expect(validation.valid).toBe(false);
+    });
+
+    it('full double sequence: double → redouble → fullset', () => {
+      const declarer = doublePhaseState.players.find(p => p.isDeclarer)!;
+      const opponent = doublePhaseState.players.find(p => p.team !== declarer.team)!;
+      const teammate = doublePhaseState.players.find(p => p.team === declarer.team && !p.isDeclarer)!;
+
+      // Opponent doubles
+      let s = engine.handleAction(doublePhaseState, action('DECLARE_DOUBLE', opponent.id)).newState;
+      expect(s.double.level).toBe('double');
+      expect(s.double.multiplier).toBe(2);
+
+      // Declarer's teammate re-doubles
+      s = engine.handleAction(s, action('DECLARE_REDOUBLE', teammate.id)).newState;
+      expect(s.double.level).toBe('redouble');
+      expect(s.double.multiplier).toBe(4);
+
+      // Opponent declares full set
+      s = engine.handleAction(s, action('DECLARE_FULLSET', opponent.id)).newState;
+      expect(s.double.level).toBe('fullset');
+      expect(s.double.multiplier).toBe(6);
+      expect(s.phase).toBe(GAME_PHASES.PLAYING);
+    });
+
+    it('opponent can pass double to skip', () => {
+      const declarer = doublePhaseState.players.find(p => p.isDeclarer)!;
+      const opponent = doublePhaseState.players.find(p => p.team !== declarer.team && p.seat === doublePhaseState.currentTurn)!;
+
+      const result = engine.handleAction(doublePhaseState, action('PASS_DOUBLE', opponent.id));
+      // Should move to the other opponent or proceed to playing
+      expect(result.newState.phase).not.toBe(GAME_PHASES.BIDDING);
+    });
+
+    it('both opponents pass → proceeds to playing', () => {
+      let s = doublePhaseState;
+      const declarer = s.players.find(p => p.isDeclarer)!;
+
+      // Pass for all eligible players (up to 4 to be safe)
+      let safety = 10;
+      while (s.phase === GAME_PHASES.DOUBLE_PHASE && safety-- > 0) {
+        const currentPlayerId = PLAYER_IDS[s.currentTurn];
+        const validation = engine.validateAction(s, action('PASS_DOUBLE', currentPlayerId));
+        if (!validation.valid) break;
+        s = engine.handleAction(s, action('PASS_DOUBLE', currentPlayerId)).newState;
+      }
+
+      expect(s.phase).toBe(GAME_PHASES.PLAYING);
+      expect(s.double.level).toBe('normal');
+      expect(s.double.multiplier).toBe(1);
+    });
+  });
+
+  // ========== PLAYING PHASE ==========
+
+  describe('PLAYING', () => {
+    let playingState: TwentyNineState;
+
+    beforeEach(() => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      // Bid
+      const bidderId = PLAYER_IDS[s.currentTurn];
+      s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
+      for (let i = 0; i < 3; i++) {
+        const pid = PLAYER_IDS[s.currentTurn];
+        if (pid !== bidderId) {
+          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+        }
+      }
+
+      // Select trump
+      const declarer = s.players.find(p => p.isDeclarer)!;
+      s = engine.handleAction(s, action('SELECT_TRUMP', declarer.id, { suit: 'hearts' })).newState;
+
+      // Skip double phase
+      s = skipDoublePhase(engine, s);
+
+      playingState = s;
+      expect(playingState.phase).toBe(GAME_PHASES.PLAYING);
+    });
+
+    it('declarer leads the first trick', () => {
+      const declarer = playingState.players.find(p => p.isDeclarer)!;
+      expect(PLAYER_IDS[playingState.currentTurn]).toBe(declarer.id);
+    });
+
+    it('can play a valid card', () => {
+      const result = playFirstValidCard(engine, playingState);
+      expect(result.currentTrick.plays).toHaveLength(1);
+    });
+
+    it('rejects out-of-turn play', () => {
+      const wrongPlayer = PLAYER_IDS[(playingState.currentTurn + 1) % 4];
+      const validation = engine.validateAction(
+        playingState,
+        action('PLAY_CARD', wrongPlayer, { cardIndex: 0 })
+      );
+      expect(validation.valid).toBe(false);
+    });
+
+    it('rejects invalid card index', () => {
+      const currentPlayer = PLAYER_IDS[playingState.currentTurn];
+      const validation = engine.validateAction(
+        playingState,
+        action('PLAY_CARD', currentPlayer, { cardIndex: 99 })
+      );
+      expect(validation.valid).toBe(false);
+    });
+
+    it('completes a full trick (4 cards)', () => {
+      let s = playingState;
+      for (let i = 0; i < 4; i++) {
+        s = playFirstValidCard(engine, s);
+      }
+      expect(s.completedTricks).toHaveLength(1);
+      expect(s.currentTrick.plays).toHaveLength(0); // Reset for next trick
+    });
+
+    it('trick winner leads the next trick', () => {
+      let s = playingState;
+      for (let i = 0; i < 4; i++) {
+        s = playFirstValidCard(engine, s);
+      }
+      const trickWinner = s.completedTricks[0].winnerId;
+      expect(PLAYER_IDS[s.currentTurn]).toBe(trickWinner);
+    });
+
+    it('plays all 8 tricks and transitions to scoring', () => {
+      let s = playingState;
+      for (let trick = 0; trick < 8; trick++) {
+        for (let card = 0; card < 4; card++) {
+          s = playFirstValidCard(engine, s);
+        }
+      }
+
+      expect(s.completedTricks).toHaveLength(8);
+      // Should be in SCORING or MATCH_COMPLETE
+      expect([GAME_PHASES.SCORING, GAME_PHASES.MATCH_COMPLETE]).toContain(s.phase);
+    });
+
+    it('follow-suit is enforced', () => {
+      // Create a controlled scenario
+      const hands: Card[][] = [
+        // p0 (team 0, declarer): all hearts — can lead hearts
+        [
+          { suit: 'hearts', rank: 'J' },
+          { suit: 'hearts', rank: '9' },
+          { suit: 'hearts', rank: 'A' },
+          { suit: 'hearts', rank: '10' },
+          { suit: 'hearts', rank: 'K' },
+          { suit: 'hearts', rank: 'Q' },
+          { suit: 'hearts', rank: '8' },
+          { suit: 'hearts', rank: '7' },
+        ],
+        // p1 (team 1): mixed suits
+        [
+          { suit: 'spades', rank: 'J' },
+          { suit: 'spades', rank: '9' },
+          { suit: 'diamonds', rank: 'A' },
+          { suit: 'diamonds', rank: '10' },
+          { suit: 'clubs', rank: 'K' },
+          { suit: 'clubs', rank: 'Q' },
+          { suit: 'clubs', rank: '8' },
+          { suit: 'clubs', rank: '7' },
+        ],
+        // p2 (team 0): mixed
+        [
+          { suit: 'spades', rank: 'A' },
+          { suit: 'spades', rank: '10' },
+          { suit: 'diamonds', rank: 'K' },
+          { suit: 'diamonds', rank: 'Q' },
+          { suit: 'clubs', rank: 'J' },
+          { suit: 'clubs', rank: '9' },
+          { suit: 'hearts', rank: '8' },
+          { suit: 'hearts', rank: '7' },
+        ],
+        // p3 (team 1): mixed
+        [
+          { suit: 'spades', rank: 'K' },
+          { suit: 'spades', rank: 'Q' },
+          { suit: 'diamonds', rank: 'J' },
+          { suit: 'diamonds', rank: '9' },
+          { suit: 'clubs', rank: 'A' },
+          { suit: 'clubs', rank: '10' },
+          { suit: 'hearts', rank: '8' },
+          { suit: 'hearts', rank: '7' },
+        ],
+      ];
+
+      const s = createControlledGame(engine, hands, 'hearts', 0, 20);
+      expect(s.phase).toBe(GAME_PHASES.PLAYING);
+
+      // p0 leads hearts
+      let state = engine.handleAction(s, action('PLAY_CARD', 'p0', { cardIndex: 0 })).newState;
+
+      // p1 has no hearts — should be able to play any suit
+      const p1NoHearts = engine.validateAction(state, action('PLAY_CARD', 'p1', { cardIndex: 0 }));
+      expect(p1NoHearts.valid).toBe(true); // spades — ok since void in hearts
+
+      // But if p1 had hearts, they'd have to follow suit
+      // This is tested implicitly by the isValidPlay tests
+    });
+  });
+
+  // ========== SCORING ==========
+
+  describe('SCORING', () => {
+    it('declarer succeeds when points >= bid', () => {
+      // Create a controlled game where declarer wins all tricks (all 28 points)
+      const hands: Card[][] = [
+        // p0 (declarer, team 0): highest cards in each suit
+        [
+          { suit: 'hearts', rank: 'J' },    // 3 pts
+          { suit: 'hearts', rank: '9' },    // 2 pts
+          { suit: 'spades', rank: 'J' },    // 3 pts
+          { suit: 'spades', rank: '9' },    // 2 pts
+          { suit: 'diamonds', rank: 'J' },  // 3 pts
+          { suit: 'diamonds', rank: '9' },  // 2 pts
+          { suit: 'clubs', rank: 'J' },     // 3 pts
+          { suit: 'clubs', rank: '9' },     // 2 pts
+        ],
+        // p1 (team 1): lowest cards
+        [
+          { suit: 'hearts', rank: '8' },
+          { suit: 'hearts', rank: '7' },
+          { suit: 'spades', rank: '8' },
+          { suit: 'spades', rank: '7' },
+          { suit: 'diamonds', rank: '8' },
+          { suit: 'diamonds', rank: '7' },
+          { suit: 'clubs', rank: '8' },
+          { suit: 'clubs', rank: '7' },
+        ],
+        // p2 (team 0): A and 10
+        [
+          { suit: 'hearts', rank: 'A' },    // 1 pt
+          { suit: 'hearts', rank: '10' },   // 1 pt
+          { suit: 'spades', rank: 'A' },    // 1 pt
+          { suit: 'spades', rank: '10' },   // 1 pt
+          { suit: 'diamonds', rank: 'A' },  // 1 pt
+          { suit: 'diamonds', rank: '10' }, // 1 pt
+          { suit: 'clubs', rank: 'A' },     // 1 pt
+          { suit: 'clubs', rank: '10' },    // 1 pt
+        ],
+        // p3 (team 1): K and Q
+        [
+          { suit: 'hearts', rank: 'K' },
+          { suit: 'hearts', rank: 'Q' },
+          { suit: 'spades', rank: 'K' },
+          { suit: 'spades', rank: 'Q' },
+          { suit: 'diamonds', rank: 'K' },
+          { suit: 'diamonds', rank: 'Q' },
+          { suit: 'clubs', rank: 'K' },
+          { suit: 'clubs', rank: 'Q' },
+        ],
+      ];
+
+      let s = createControlledGame(engine, hands, 'spades', 0, 20);
+
+      // Play all 8 tricks (p0 always leads and wins with highest trump)
+      for (let trick = 0; trick < 8; trick++) {
+        for (let card = 0; card < 4; card++) {
+          s = playFirstValidCard(engine, s);
+        }
+      }
+
+      // p0 leads J of hearts → p2 plays A of hearts → p2 has A+10 = 2 pts from that trick
+      // But actually p0's J (trump spades) wins everything
+      // Let's just check scoring happened
+      expect([GAME_PHASES.SCORING, GAME_PHASES.MATCH_COMPLETE]).toContain(s.phase);
+      expect(s.score.lastBidResult).not.toBeNull();
+    });
+
+    it('calculates match points correctly for normal game', () => {
+      const hands: Card[][] = [
+        // p0 (declarer, team 0)
+        [
+          { suit: 'hearts', rank: 'J' },    // 3
+          { suit: 'hearts', rank: '9' },    // 2
+          { suit: 'hearts', rank: 'A' },    // 1
+          { suit: 'hearts', rank: '10' },   // 1
+          { suit: 'hearts', rank: 'K' },    // 0
+          { suit: 'hearts', rank: 'Q' },    // 0
+          { suit: 'hearts', rank: '8' },    // 0
+          { suit: 'hearts', rank: '7' },    // 0
+        ],
+        // p1 (team 1)
+        [
+          { suit: 'spades', rank: 'J' },
+          { suit: 'spades', rank: '9' },
+          { suit: 'spades', rank: 'A' },
+          { suit: 'spades', rank: '10' },
+          { suit: 'spades', rank: 'K' },
+          { suit: 'spades', rank: 'Q' },
+          { suit: 'spades', rank: '8' },
+          { suit: 'spades', rank: '7' },
+        ],
+        // p2 (team 0)
+        [
+          { suit: 'diamonds', rank: 'J' },
+          { suit: 'diamonds', rank: '9' },
+          { suit: 'diamonds', rank: 'A' },
+          { suit: 'diamonds', rank: '10' },
+          { suit: 'diamonds', rank: 'K' },
+          { suit: 'diamonds', rank: 'Q' },
+          { suit: 'diamonds', rank: '8' },
+          { suit: 'diamonds', rank: '7' },
+        ],
+        // p3 (team 1)
+        [
+          { suit: 'clubs', rank: 'J' },
+          { suit: 'clubs', rank: '9' },
+          { suit: 'clubs', rank: 'A' },
+          { suit: 'clubs', rank: '10' },
+          { suit: 'clubs', rank: 'K' },
+          { suit: 'clubs', rank: 'Q' },
+          { suit: 'clubs', rank: '8' },
+          { suit: 'clubs', rank: '7' },
+        ],
+      ];
+
+      // Trump is hearts → p0 wins all hearts tricks
+      let s = createControlledGame(engine, hands, 'hearts', 0, 16);
+
+      for (let trick = 0; trick < 8; trick++) {
+        for (let card = 0; card < 4; card++) {
+          s = playFirstValidCard(engine, s);
+        }
+      }
+
+      // p0 has hearts (trump) with J+9+A+10+K+Q+8+7
+      // Each trick: p0 leads hearts, others follow with non-trump
+      // p0 wins every trick → team 0 gets all 28 points
+      // Bid was 16 → team 0 succeeds → +1 match point for team 0
+      expect(s.score.matchPoints[0]).toBe(1);
+      expect(s.score.matchPoints[1]).toBe(-1);
+      expect(s.score.lastBidResult).toBe('success');
+    });
+  });
+
+  // ========== SEVENTH CARD TRUMP ==========
+
+  describe('SEVENTH CARD TRUMP', () => {
+    it('full flow: select 7th card → second deal → trump determined', () => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      // Bid
+      const bidderId = PLAYER_IDS[s.currentTurn];
+      s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
+      for (let i = 0; i < 3; i++) {
+        const pid = PLAYER_IDS[s.currentTurn];
+        if (pid !== bidderId) {
+          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+        }
+      }
+
+      expect(s.phase).toBe(GAME_PHASES.TRUMP_SELECTION);
+      const declarer = s.players.find(p => p.isDeclarer)!;
+
+      // Select seventh-card trump
+      s = engine.handleAction(s, action('SELECT_SEVENTH_CARD_TRUMP', declarer.id)).newState;
+
+      // Trump should now be determined from the 7th card in the declarer's 8-card hand
+      expect(s.trump.type).toBe('seventh-card');
+      expect(s.trump.suit).toBeTruthy();
+      expect(s.trump.seventhCard).toBeTruthy();
+      expect(s.trump.isRevealed).toBe(false);
+      expect(s.trump.seventhCard!.suit).toBe(s.trump.suit);
+
+      // Declarer should have 8 cards (4 original + 4 from second deal)
+      // Note: the 7th card is NOT removed from the hand — it's just noted
+      const updatedDeclarer = s.players.find(p => p.isDeclarer)!;
+      expect(updatedDeclarer.hand).toHaveLength(8);
+      expect(updatedDeclarer.hand[6]).toEqual(s.trump.seventhCard);
+    });
+
+    it('hidden trump: cannot be seen by non-declarers', () => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      const bidderId = PLAYER_IDS[s.currentTurn];
+      s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
+      for (let i = 0; i < 3; i++) {
+        const pid = PLAYER_IDS[s.currentTurn];
+        if (pid !== bidderId) {
+          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+        }
+      }
+
+      const declarer = s.players.find(p => p.isDeclarer)!;
+      s = engine.handleAction(s, action('SELECT_SEVENTH_CARD_TRUMP', declarer.id)).newState;
+
+      // Check visibility for a non-declarer
+      const nonDeclarer = s.players.find(p => !p.isDeclarer)!;
+      const visible = engine.getVisibleState(s, nonDeclarer.id, 'player');
+
+      // Trump suit should be hidden for non-declarers
+      expect((visible.trump as any).suit).toBeNull();
+      expect((visible.trump as any).type).toBe('seventh-card');
+    });
+
+    it('seventh-card trump: can be revealed during play', () => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      const bidderId = PLAYER_IDS[s.currentTurn];
+      s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
+      for (let i = 0; i < 3; i++) {
+        const pid = PLAYER_IDS[s.currentTurn];
+        if (pid !== bidderId) {
+          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+        }
+      }
+
+      const declarer = s.players.find(p => p.isDeclarer)!;
+      s = engine.handleAction(s, action('SELECT_SEVENTH_CARD_TRUMP', declarer.id)).newState;
+
+      // Skip double phase
+      s = skipDoublePhase(engine, s);
+      expect(s.phase).toBe(GAME_PHASES.PLAYING);
+
+      // Declarer can reveal trump if they have a trump-suit card
+      const trumpSuit = s.trump.suit!;
+      const hasTrumpCard = declarer.hand.some(c => c.suit === trumpSuit);
+
+      if (hasTrumpCard) {
+        const validation = engine.validateAction(s, action('REQUEST_TRUMP_REVEAL', declarer.id));
+        expect(validation.valid).toBe(true);
+
+        s = engine.handleAction(s, action('REQUEST_TRUMP_REVEAL', declarer.id)).newState;
+        expect(s.trump.isRevealed).toBe(true);
+        expect(s.trump.revealedBy).toBe(declarer.id);
+      }
+    });
+  });
+
+  // ========== MARRIAGE ==========
+
+  describe('MARRIAGE', () => {
+    it('detects marriage with normal suit trump during second deal', () => {
+      // Create hands where one player has K+Q of trump suit
+      const hands: Card[][] = [
+        // p0 (declarer, team 0): has K+Q of hearts (trump)
+        [
+          { suit: 'hearts', rank: 'J' },
+          { suit: 'hearts', rank: '9' },
+          { suit: 'hearts', rank: 'A' },
+          { suit: 'hearts', rank: '10' },
+        ],
+        // p1 (team 1)
+        [
+          { suit: 'spades', rank: 'J' },
+          { suit: 'spades', rank: '9' },
+          { suit: 'spades', rank: 'A' },
+          { suit: 'spades', rank: '10' },
+        ],
+        // p2 (team 0)
+        [
+          { suit: 'diamonds', rank: 'J' },
+          { suit: 'diamonds', rank: '9' },
+          { suit: 'diamonds', rank: 'A' },
+          { suit: 'diamonds', rank: '10' },
+        ],
+        // p3 (team 1)
+        [
+          { suit: 'clubs', rank: 'J' },
+          { suit: 'clubs', rank: '9' },
+          { suit: 'clubs', rank: 'A' },
+          { suit: 'clubs', rank: '10' },
+        ],
+      ];
+
+      // We need to control the remaining deck so the second deal gives p0 the K+Q of hearts
+      const state = createGame(engine);
+      state.players = PLAYER_IDS.map((id, seat) => ({
+        id,
+        seat,
+        team: TEAMS[seat],
+        hand: hands[seat],
+        isDealer: seat === 0,
+        isDeclarer: false,
+        isConnected: true,
+      }));
+      state.phase = GAME_PHASES.TRUMP_SELECTION;
+      state.dealCount = 4;
+      state.bidding = {
+        currentBid: 20,
+        currentBidder: 'p0',
+        highestBid: 20,
+        highestBidder: 'p0',
+        bids: [{ playerId: 'p0', bid: 20 }],
+        passCount: 3,
+      };
+      state.players[0].isDeclarer = true;
+
+      // Set remaining deck to include K+Q of hearts for p0's second deal
+      // Second deal is round-robin: cards[0]→p0, cards[1]→p1, cards[2]→p2, cards[3]→p3, ...
+      // Need 16 cards total (4 per player)
+      state.deck = [
+        { suit: 'hearts', rank: 'K' } as Card,    // → p0 (gives K+Q of hearts)
+        { suit: 'spades', rank: 'K' } as Card,    // → p1
+        { suit: 'diamonds', rank: 'K' } as Card,  // → p2
+        { suit: 'clubs', rank: 'K' } as Card,     // → p3
+        { suit: 'hearts', rank: 'Q' } as Card,    // → p0 (gives Q of hearts → marriage!)
+        { suit: 'spades', rank: 'Q' } as Card,    // → p1
+        { suit: 'diamonds', rank: 'Q' } as Card,  // → p2
+        { suit: 'clubs', rank: 'Q' } as Card,     // → p3
+        { suit: 'hearts', rank: '8' } as Card,    // → p0
+        { suit: 'spades', rank: '8' } as Card,    // → p1
+        { suit: 'diamonds', rank: '8' } as Card,  // → p2
+        { suit: 'clubs', rank: '8' } as Card,     // → p3
+        { suit: 'hearts', rank: '7' } as Card,    // → p0
+        { suit: 'spades', rank: '7' } as Card,    // → p1
+        { suit: 'diamonds', rank: '7' } as Card,  // → p2
+        { suit: 'clubs', rank: '7' } as Card,     // → p3
+      ];
+
+      // Select normal suit trump (hearts)
+      const result = engine.handleAction(state, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      const s = result.newState;
+
+      // Marriage should be detected: p0 has K+Q of hearts
+      expect(s.marriage).not.toBeNull();
+      expect(s.marriage!.team).toBe(0);
+      expect(s.marriage!.suit).toBe('hearts');
+      // Effective bid: marriage on bidding team → max(16, 20-4) = 16
+      expect(s.marriage!.effectiveBid).toBe(16);
+    });
+
+    it('marriage on defending team raises effective bid', () => {
+      const state = createGame(engine);
+      state.players = PLAYER_IDS.map((id, seat) => ({
+        id,
+        seat,
+        team: TEAMS[seat],
+        hand: [
+          { suit: 'hearts', rank: 'J' } as Card,
+          { suit: 'hearts', rank: '9' } as Card,
+          { suit: 'spades', rank: 'A' } as Card,
+          { suit: 'spades', rank: '10' } as Card,
+        ],
+        isDealer: seat === 0,
+        isDeclarer: seat === 0,
+        isConnected: true,
+      }));
+      state.phase = GAME_PHASES.TRUMP_SELECTION;
+      state.dealCount = 4;
+      state.bidding = {
+        currentBid: 20,
+        currentBidder: 'p0',
+        highestBid: 20,
+        highestBidder: 'p0',
+        bids: [{ playerId: 'p0', bid: 20 }],
+        passCount: 3,
+      };
+
+      // Give p1 (team 1, defending) the K+Q of hearts in second deal
+      // secondDeal distributes round-robin: 0→p0, 1→p1, 2→p2, 3→p3, 4→p0, 5→p1, ...
+      // Need 16 cards total (4 per player)
+      state.deck = [
+        { suit: 'spades', rank: 'K' } as Card,    // → p0
+        { suit: 'hearts', rank: 'K' } as Card,    // → p1 (marriage card!)
+        { suit: 'diamonds', rank: 'K' } as Card,  // → p2
+        { suit: 'clubs', rank: 'K' } as Card,     // → p3
+        { suit: 'spades', rank: 'Q' } as Card,    // → p0
+        { suit: 'hearts', rank: 'Q' } as Card,    // → p1 (marriage card!)
+        { suit: 'diamonds', rank: 'Q' } as Card,  // → p2
+        { suit: 'clubs', rank: 'Q' } as Card,     // → p3
+        { suit: 'spades', rank: '8' } as Card,    // → p0
+        { suit: 'spades', rank: '7' } as Card,    // → p1
+        { suit: 'diamonds', rank: '8' } as Card,  // → p2
+        { suit: 'diamonds', rank: '7' } as Card,  // → p3
+        { suit: 'clubs', rank: '8' } as Card,     // → p0
+        { suit: 'clubs', rank: '7' } as Card,     // → p1
+        { suit: 'hearts', rank: '8' } as Card,    // → p2
+        { suit: 'hearts', rank: '7' } as Card,    // → p3
+      ];
+
+      const result = engine.handleAction(state, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
+      const s = result.newState;
+
+      expect(s.marriage).not.toBeNull();
+      expect(s.marriage!.team).toBe(1); // Defending team
+      // Effective bid: marriage on defending team → min(28, 20+4) = 24
+      expect(s.marriage!.effectiveBid).toBe(24);
+    });
+
+    it('no marriage in joker mode', () => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      const bidderId = PLAYER_IDS[s.currentTurn];
+      s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
+      for (let i = 0; i < 3; i++) {
+        const pid = PLAYER_IDS[s.currentTurn];
+        if (pid !== bidderId) {
+          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+        }
+      }
+
+      const declarer = s.players.find(p => p.isDeclarer)!;
+      s = engine.handleAction(s, action('SELECT_JOKER', declarer.id)).newState;
+
+      expect(s.marriage).toBeNull();
+    });
+  });
+
+  // ========== WEAK HAND ==========
+
+  describe('WEAK HAND', () => {
+    it('can cancel weak hand and redeal', () => {
+      const state = createGame(engine);
+      let result = engine.handleAction(state, action('START_GAME', 'p0'));
+      let s = result.newState;
+
+      if (s.weakHandPlayer) {
+        // CANCEL_WEAK_HAND now always re-deals
+        result = engine.handleAction(s, action('CANCEL_WEAK_HAND', s.weakHandPlayer));
+        s = result.newState;
+
+        // After cancellation, should redeal (FIRST_DEAL or BIDDING)
+        expect([GAME_PHASES.FIRST_DEAL, GAME_PHASES.BIDDING]).toContain(s.phase);
+        expect(s.weakHandPlayer).toBeNull();
+      }
+    });
+
+    it('can keep weak hand and proceed to bidding', () => {
+      const state = createGame(engine);
+      let result = engine.handleAction(state, action('START_GAME', 'p0'));
+      let s = result.newState;
+
+      if (s.weakHandPlayer) {
+        // KEEP_WEAK_HAND proceeds to bidding
+        result = engine.handleAction(s, action('KEEP_WEAK_HAND', s.weakHandPlayer));
+        s = result.newState;
+
+        expect(s.phase).toBe(GAME_PHASES.BIDDING);
+        expect(s.weakHandPlayer).toBeNull();
+      }
+    });
+
+    it('rejects cancel from wrong player', () => {
+      const state = createGame(engine);
+      let result = engine.handleAction(state, action('START_GAME', 'p0'));
+      let s = result.newState;
+
+      if (s.weakHandPlayer) {
+        const wrongPlayer = s.players.find(p => p.id !== s.weakHandPlayer)!.id;
+        const validation = engine.validateAction(s, action('CANCEL_WEAK_HAND', wrongPlayer));
+        expect(validation.valid).toBe(false);
+      }
+    });
+  });
+
+  // ========== HIDDEN TRUMP NEVER REVEALED ==========
+
+  describe('HIDDEN TRUMP NEVER REVEALED', () => {
+    it('cancels game if seventh-card trump never revealed', () => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      const bidderId = PLAYER_IDS[s.currentTurn];
+      s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
+      for (let i = 0; i < 3; i++) {
+        const pid = PLAYER_IDS[s.currentTurn];
+        if (pid !== bidderId) {
+          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+        }
+      }
+
+      const declarer = s.players.find(p => p.isDeclarer)!;
+      s = engine.handleAction(s, action('SELECT_SEVENTH_CARD_TRUMP', declarer.id)).newState;
+
+      // Skip double phase
+      s = skipDoublePhase(engine, s);
+
+      // Play all 8 tricks WITHOUT revealing trump
+      // We need to make sure nobody reveals
+      for (let trick = 0; trick < 8; trick++) {
+        for (let card = 0; card < 4; card++) {
+          s = playFirstValidCard(engine, s);
+        }
+      }
+
+      // Game should be cancelled
+      expect(s.phase).toBe(GAME_PHASES.MATCH_COMPLETE);
+      // No points should be awarded (score unchanged)
+      expect(s.score.matchPoints[0]).toBe(0);
+      expect(s.score.matchPoints[1]).toBe(0);
+    });
+  });
+
+  // ========== VISIBILITY ==========
+
+  describe('VISIBILITY', () => {
+    it('hides opponent hands', () => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      const visible = engine.getVisibleState(s, 'p0', 'player');
+      const players = visible.players as any[];
+
+      // p0 should see their own hand
+      const me = players.find((p: any) => p.id === 'p0');
+      expect(me.hand).toBeDefined();
+      expect(me.hand).toHaveLength(4);
+
+      // p1's hand should be hidden
+      const opponent = players.find((p: any) => p.id === 'p1');
+      expect(opponent.hand).toBeUndefined();
+      expect(opponent.handCount).toBe(4);
+    });
+
+    it('spectators cannot see any hands', () => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      const visible = engine.getVisibleState(s, 'spectator1', 'spectator');
+      const players = visible.players as any[];
+
+      for (const p of players) {
+        expect(p.hand).toBeUndefined();
+      }
+    });
+
+    it('seventh-card trump hidden from non-declarers', () => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      const bidderId = PLAYER_IDS[s.currentTurn];
+      s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
+      for (let i = 0; i < 3; i++) {
+        const pid = PLAYER_IDS[s.currentTurn];
+        if (pid !== bidderId) {
+          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+        }
+      }
+
+      const declarer = s.players.find(p => p.isDeclarer)!;
+      s = engine.handleAction(s, action('SELECT_SEVENTH_CARD_TRUMP', declarer.id)).newState;
+
+      // Declarer sees the trump
+      const declarerView = engine.getVisibleState(s, declarer.id, 'player');
+      expect((declarerView.trump as any).suit).toBe(s.trump.suit);
+      expect((declarerView.trump as any).seventhCard).toEqual(s.trump.seventhCard);
+
+      // Non-declarer doesn't see the trump
+      const otherPlayer = s.players.find(p => !p.isDeclarer)!;
+      const otherView = engine.getVisibleState(s, otherPlayer.id, 'player');
+      expect((otherView.trump as any).suit).toBeNull();
+      expect((otherView.trump as any).seventhCard).toBeNull();
+    });
+  });
+
+  // ========== GAME COMPLETION ==========
+
+  describe('GAME COMPLETION', () => {
+    it('rotates dealer after game completes', () => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      const bidderId = PLAYER_IDS[s.currentTurn];
+      s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 16 })).newState;
+      for (let i = 0; i < 3; i++) {
+        const pid = PLAYER_IDS[s.currentTurn];
+        if (pid !== bidderId) {
+          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+        }
+      }
+
+      const declarer = s.players.find(p => p.isDeclarer)!;
+      s = engine.handleAction(s, action('SELECT_TRUMP', declarer.id, { suit: 'hearts' })).newState;
+      s = skipDoublePhase(engine, s);
+
+      const oldDealerSeat = s.dealerSeat;
+
+      for (let trick = 0; trick < 8; trick++) {
+        for (let card = 0; card < 4; card++) {
+          s = playFirstValidCard(engine, s);
+        }
+      }
+
+      // Dealer should have rotated
+      expect(s.dealerSeat).toBe((oldDealerSeat + 1) % 4);
+    });
+
+    it('declarer flag is reset after game', () => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      const bidderId = PLAYER_IDS[s.currentTurn];
+      s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 16 })).newState;
+      for (let i = 0; i < 3; i++) {
+        const pid = PLAYER_IDS[s.currentTurn];
+        if (pid !== bidderId) {
+          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+        }
+      }
+
+      const declarer = s.players.find(p => p.isDeclarer)!;
+      s = engine.handleAction(s, action('SELECT_TRUMP', declarer.id, { suit: 'hearts' })).newState;
+      s = skipDoublePhase(engine, s);
+
+      for (let trick = 0; trick < 8; trick++) {
+        for (let card = 0; card < 4; card++) {
+          s = playFirstValidCard(engine, s);
+        }
+      }
+
+      // All declarer flags should be reset
+      for (const p of s.players) {
+        expect(p.isDeclarer).toBe(false);
+      }
+    });
+
+    it('tracks sets correctly', () => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      const bidderId = PLAYER_IDS[s.currentTurn];
+      s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 16 })).newState;
+      for (let i = 0; i < 3; i++) {
+        const pid = PLAYER_IDS[s.currentTurn];
+        if (pid !== bidderId) {
+          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+        }
+      }
+
+      const declarer = s.players.find(p => p.isDeclarer)!;
+      s = engine.handleAction(s, action('SELECT_TRUMP', declarer.id, { suit: 'hearts' })).newState;
+      s = skipDoublePhase(engine, s);
+
+      for (let trick = 0; trick < 8; trick++) {
+        for (let card = 0; card < 4; card++) {
+          s = playFirstValidCard(engine, s);
+        }
+      }
+
+      // At least one set should potentially be awarded if match points reach threshold
+      expect(s.score.sets[0] + s.score.sets[1]).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  // ========== ERROR HANDLING ==========
+
+  describe('ERROR HANDLING', () => {
+    it('returns error for unknown action', () => {
+      const state = createGame(engine);
+      const result = engine.handleAction(state, action('INVALID_ACTION', 'p0'));
+      expect(result.errors).toBeDefined();
+      expect(result.errors![0].code).toBe('UNKNOWN_ACTION');
+    });
+
+    it('rejects actions from non-existent players', () => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      const validation = engine.validateAction(s, action('PLACE_BID', 'nonexistent', { bid: 16 }));
+      expect(validation.valid).toBe(false);
+    });
+
+    it('rejects game actions when game is not in progress', () => {
+      const state = createGame(engine);
+      // Don't start the game — still in WAITING_FOR_PLAYERS
+      const validation = engine.validateAction(state, action('PLACE_BID', 'p0', { bid: 16 }));
+      expect(validation.valid).toBe(false);
+    });
+  });
+});

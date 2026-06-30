@@ -43,12 +43,14 @@ export function BidPanel() {
       <div className="flex gap-2">
         <button
           onClick={passBid}
+          data-testid="pass-bid-btn"
           className="flex-1 rounded-lg border border-gray-600 px-4 py-2 text-gray-300 hover:bg-gray-700 transition-colors"
         >
           Pass
         </button>
         <button
           onClick={() => placeBid(bidValue)}
+          data-testid="place-bid-btn"
           className="flex-1 rounded-lg bg-yellow-600 px-4 py-2 font-semibold text-white hover:bg-yellow-700 transition-colors"
         >
           Bid {bidValue}

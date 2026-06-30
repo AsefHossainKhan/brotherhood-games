@@ -22,6 +22,7 @@ export function TrumpSelector() {
           <button
             key={suit.name}
             onClick={() => selectTrump(suit.name)}
+            data-testid={`trump-${suit.name}`}
             className="flex items-center justify-center gap-2 rounded-lg border border-gray-600 px-4 py-3 hover:bg-gray-700 transition-colors"
           >
             <span className={`text-2xl ${suit.color}`}>{suit.symbol}</span>
@@ -34,12 +35,14 @@ export function TrumpSelector() {
       <div className="flex gap-2">
         <button
           onClick={selectSeventhCardTrump}
+          data-testid="trump-seventh-card"
           className="flex-1 rounded-lg border border-purple-600 px-4 py-2 text-sm text-purple-400 hover:bg-purple-900/30 transition-colors"
         >
           🂠 7th Card
         </button>
         <button
           onClick={selectJoker}
+          data-testid="trump-joker"
           className="flex-1 rounded-lg border border-orange-600 px-4 py-2 text-sm text-orange-400 hover:bg-orange-900/30 transition-colors"
         >
           🃏 Joker
