@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Card } from '../types/card';
-import { SuitSVG } from './SuitSVG';
+import { SuitIcon } from './SuitSVG';
 
 interface CardComponentProps {
   card: Card;
@@ -25,7 +25,6 @@ export function CardComponent({
 }: CardComponentProps) {
   const { suit, rank } = card;
   const color = isRedSuit(suit) ? '#dc2626' : '#1a1a2e';
-  const scale = width / 80;
 
   return (
     <div
@@ -59,59 +58,43 @@ export function CardComponent({
           strokeWidth={selected ? 2 : 1}
         />
 
-        {/* Top-left rank */}
+        {/* Top-left rank & suit */}
         <text
-          x="8"
-          y="17"
+          x="10"
+          y="15"
           fill={color}
-          fontSize={rank === '10' ? 13 : 14}
+          fontSize={rank === '10' ? 12 : 14}
           fontWeight="700"
           fontFamily="'Georgia', 'Times New Roman', serif"
-          textAnchor="start"
+          textAnchor="middle"
         >
           {rank}
         </text>
-
-        {/* Top-left suit icon */}
-        <foreignObject x="4" y="19" width="16" height="16">
-          <div style={{ width: 12 * scale, height: 12 * scale }}>
-            <SuitSVG suit={suit} size={12 * scale} />
-          </div>
-        </foreignObject>
+        <g transform="translate(3, 17) scale(0.14)">
+          <SuitIcon suit={suit} fill={color} />
+        </g>
 
         {/* Center suit (large) */}
-        <foreignObject x="20" y="32" width="40" height="48">
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '100%',
-              height: '100%',
-            }}
-          >
-            <SuitSVG suit={suit} size={36 * scale} />
-          </div>
-        </foreignObject>
+        <g transform="translate(22, 34) scale(0.36)">
+          <SuitIcon suit={suit} fill={color} />
+        </g>
 
-        {/* Bottom-right (rotated 180°) */}
+        {/* Bottom-right rank & suit (rotated 180°) */}
         <g transform="rotate(180, 40, 56)">
           <text
-            x="8"
-            y="17"
+            x="10"
+            y="15"
             fill={color}
-            fontSize={rank === '10' ? 13 : 14}
+            fontSize={rank === '10' ? 12 : 14}
             fontWeight="700"
             fontFamily="'Georgia', 'Times New Roman', serif"
-            textAnchor="start"
+            textAnchor="middle"
           >
             {rank}
           </text>
-          <foreignObject x="4" y="19" width="16" height="16">
-            <div style={{ width: 12 * scale, height: 12 * scale }}>
-              <SuitSVG suit={suit} size={12 * scale} />
-            </div>
-          </foreignObject>
+          <g transform="translate(3, 17) scale(0.14)">
+            <SuitIcon suit={suit} fill={color} />
+          </g>
         </g>
       </svg>
     </div>

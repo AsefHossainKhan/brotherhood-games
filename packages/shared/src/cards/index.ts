@@ -5,4 +5,4 @@
 export * from './utils';
 export { CardComponent } from './Card';
 export { CardBack } from './CardBack';
-export { SuitSVG } from './SuitSVG';
+export { SuitSVG, SuitIcon } from './SuitSVG';
