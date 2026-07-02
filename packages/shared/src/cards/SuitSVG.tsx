@@ -40,14 +40,16 @@ function DiamondSVG({ fill }: { fill: string }) {
 function ClubSVG({ fill }: { fill: string }) {
   return (
     <svg viewBox="0 0 100 100" fill={fill}>
-      {/* Three lobes */}
-      <circle cx="50" cy="24" r="20" />
-      <circle cx="28" cy="52" r="20" />
-      <circle cx="72" cy="52" r="20" />
       {/* Stem */}
       <rect x="43" y="56" width="14" height="30" rx="2" />
       {/* Stem base */}
       <rect x="36" y="82" width="28" height="8" rx="3" />
+      {/* Fill center gap between the three circles */}
+      <circle cx="50" cy="43" r="14" />
+      {/* Three lobes */}
+      <circle cx="50" cy="24" r="20" />
+      <circle cx="28" cy="52" r="20" />
+      <circle cx="72" cy="52" r="20" />
     </svg>
   );
 }
