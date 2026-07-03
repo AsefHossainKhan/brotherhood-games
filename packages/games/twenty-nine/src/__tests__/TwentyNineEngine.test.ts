@@ -1018,32 +1018,37 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       s = skipDoublePhase(engine, s);
       expect(s.phase).toBe(GAME_PHASES.PLAYING);
 
-      // Declarer can reveal trump when they have no led suit cards
       const trumpSuit = s.trump.suit!;
-      const declarerHasTrumpCard = declarer.hand.some(c => c.suit === trumpSuit);
 
-      // Set up a trick led by a suit the declarer doesn't have
-      const ledSuit = declarer.hand.every(c => c.suit !== 'spades') ? 'spades' : 'clubs';
-      s.leadSuit = ledSuit as Suit;
-      s.currentTrick = {
-        plays: [{ playerId: 'p1', card: { suit: ledSuit, rank: 'J' } as Card, cardIndex: 0 }],
-        leadSuit: ledSuit as Suit,
-        winnerId: null,
-        trickNumber: 1,
-      };
-      s.currentTurn = declarer.seat;
+      // Find a non-trump suit the declarer doesn't have
+      const allSuits: Suit[] = ['hearts', 'diamonds', 'clubs', 'spades'];
+      const currentHand = s.players.find(p => p.isDeclarer)!.hand;
+      const ledSuit = allSuits.find(suit => suit !== trumpSuit && !currentHand.some(c => c.suit === suit));
 
-      // Declarer should be able to reveal since they have no led-suit cards
-      if (declarerHasTrumpCard) {
-        const hasLedSuit = declarer.hand.some(c => c.suit === ledSuit);
-        if (!hasLedSuit) {
-          const validation = engine.validateAction(s, action('REQUEST_TRUMP_REVEAL', declarer.id));
-          expect(validation.valid).toBe(true);
+      // Only test reveal if declarer lacks a non-trump suit (otherwise skip — random deal may give all)
+      if (ledSuit) {
+        s.leadSuit = ledSuit;
+        s.currentTrick = {
+          plays: [{ playerId: 'p1', card: { suit: ledSuit, rank: 'J' } as Card, cardIndex: 0 }],
+          leadSuit: ledSuit,
+          winnerId: null,
+          trickNumber: 1,
+        };
+        s.currentTurn = declarer.seat;
 
-          s = engine.handleAction(s, action('REQUEST_TRUMP_REVEAL', declarer.id)).newState;
-          expect(s.trump.isRevealed).toBe(true);
-          expect(s.trump.revealedBy).toBe(declarer.id);
-        }
+        const validation = engine.validateAction(s, action('REQUEST_TRUMP_REVEAL', declarer.id));
+        expect(validation.valid).toBe(true);
+
+        const result = engine.handleAction(s, action('REQUEST_TRUMP_REVEAL', declarer.id));
+        s = result.newState;
+        expect(s.trump.isRevealed).toBe(true);
+        expect(s.trump.revealedBy).toBe(declarer.id);
+
+        // Verify the seventh card is included in the TRUMP_REVEALED broadcast
+        const revealBroadcast = result.broadcasts.find(b => b.event === 'TRUMP_REVEALED');
+        expect(revealBroadcast).toBeDefined();
+        expect(revealBroadcast!.payload.seventhCard).toEqual(s.trump.seventhCard);
+        expect(revealBroadcast!.payload.seventhCard.suit).toBe(trumpSuit);
       }
     });
   });
@@ -1388,8 +1393,17 @@ describe('TwentyNineEngine — Full Game Flow', () => {
 
       const oldDealerSeat = s.dealerSeat;
 
+      // Play all tricks, attempting to reveal trump when possible
       for (let trick = 0; trick < 8; trick++) {
         for (let card = 0; card < 4; card++) {
+          const currentPlayerId = PLAYER_IDS[s.currentTurn];
+          // Try to reveal if it's hidden and conditions are met
+          if (!s.trump.isRevealed && s.trump.suit && s.leadSuit) {
+            const validation = engine.validateAction(s, action('REQUEST_TRUMP_REVEAL', currentPlayerId));
+            if (validation.valid) {
+              s = engine.handleAction(s, action('REQUEST_TRUMP_REVEAL', currentPlayerId)).newState;
+            }
+          }
           s = playFirstValidCard(engine, s);
         }
       }

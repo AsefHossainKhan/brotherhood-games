@@ -68,7 +68,7 @@ export function useSocket() {
     });
 
     socket.on('TRUMP_REVEALED', (data) => {
-      console.log('Trump revealed:', data.suit, 'by', data.playerId);
+      console.log('Trump revealed:', data.suit, 'by', data.playerId, data.seventhCard ? `(7th card: ${data.seventhCard.rank} of ${data.seventhCard.suit})` : '');
     });
 
     socket.on('MARRIAGE_DECLARED', (data) => {

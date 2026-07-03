@@ -50,7 +50,7 @@ export function TrumpSelector() {
       </div>
 
       <p className="mt-2 text-center text-xs text-gray-600">
-        7th Card: trump hidden until reveal. Joker: no trump.
+        7th Card: card shown to all on reveal. Joker: no trump.
       </p>
     </div>
   );

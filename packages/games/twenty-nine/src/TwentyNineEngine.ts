@@ -220,8 +220,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
             ? null
             : state.trump.suit,
         isRevealed: state.trump.isRevealed,
-        // Hide seventh card unless you're the declarer
-        seventhCard: isDeclarer ? state.trump.seventhCard : null,
+        // Seventh card: visible to declarer always, visible to everyone after reveal
+        seventhCard: isDeclarer || state.trump.isRevealed ? state.trump.seventhCard : null,
         mustPlayTrump: state.trump.mustPlayTrump && state.trump.revealedBy === playerId,
       },
       double: state.double,
@@ -1064,7 +1064,12 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
 
     broadcasts.push({
       event: 'TRUMP_REVEALED',
-      payload: { suit: state.trump.suit, playerId },
+      payload: {
+        suit: state.trump.suit,
+        playerId,
+        // For seventh-card mode, include the actual card so everyone can see it
+        seventhCard: state.trump.type === 'seventh-card' ? state.trump.seventhCard : undefined,
+      },
     });
 
     // Check for marriage

@@ -95,12 +95,16 @@ describe('shouldCancelForHiddenTrump', () => {
     expect(shouldCancelForHiddenTrump('seventh-card', false, 8, 8)).toBe(true);
   });
 
-  it('does not cancel if trump was revealed', () => {
-    expect(shouldCancelForHiddenTrump('seventh-card', true, 8, 8)).toBe(false);
+  it('cancels if suit trump never revealed after all tricks', () => {
+    expect(shouldCancelForHiddenTrump('suit', false, 8, 8)).toBe(true);
   });
 
-  it('does not cancel if not seventh-card mode', () => {
-    expect(shouldCancelForHiddenTrump('suit', false, 8, 8)).toBe(false);
+  it('cancels if joker trump never revealed after all tricks', () => {
+    expect(shouldCancelForHiddenTrump('joker', false, 8, 8)).toBe(true);
+  });
+
+  it('does not cancel if trump was revealed', () => {
+    expect(shouldCancelForHiddenTrump('seventh-card', true, 8, 8)).toBe(false);
   });
 
   it('does not cancel if tricks still remaining', () => {

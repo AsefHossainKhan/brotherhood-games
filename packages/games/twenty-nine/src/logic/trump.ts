@@ -76,5 +76,5 @@ export function shouldCancelForHiddenTrump(
   tricksPlayed: number,
   totalTricks: number
 ): boolean {
-  return trumpType === 'seventh-card' && !trumpRevealed && tricksPlayed >= totalTricks;
+  return !trumpRevealed && tricksPlayed >= totalTricks;
 }

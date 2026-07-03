@@ -51,7 +51,11 @@ export function ScoreBoard() {
         <div className="text-center">
           <div className="text-xs text-gray-500">Trump</div>
           <div className="text-sm font-medium text-green-400">
-            {trump.isRevealed ? trump.suit : 'Hidden'}
+            {trump.isRevealed
+              ? trump.seventhCard
+                ? `${trump.seventhCard.rank} of ${trump.suit}`
+                : trump.suit
+              : 'Hidden'}
           </div>
         </div>
       )}
