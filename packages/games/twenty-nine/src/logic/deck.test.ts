@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildDeck, shuffleDeck, dealCards } from './deck';
+import { createShuffleRng } from './rng';
 import type { Card } from '@brotherhood/shared';
 
 describe('buildDeck', () => {
@@ -72,6 +73,29 @@ describe('shuffleDeck', () => {
       }
     }
     expect(anyDifferent).toBe(true);
+  });
+
+  it('should reproduce exact shuffle given same seeded RNG', () => {
+    const deck = buildDeck();
+    const rng1 = createShuffleRng(555, 0);
+    const rng2 = createShuffleRng(555, 0);
+    expect(shuffleDeck(deck, rng1)).toEqual(shuffleDeck(deck, rng2));
+  });
+
+  it('should still work without optional rng param', () => {
+    const deck = buildDeck();
+    const result = shuffleDeck(deck);
+    expect(result).toHaveLength(32);
+    const sorted = (cards: Card[]) =>
+      cards.map((c) => `${c.suit}_${c.rank}`).sort().join(',');
+    expect(sorted(result)).toEqual(sorted(deck));
+  });
+
+  it('should not mutate the original deck when using seeded RNG', () => {
+    const deck = buildDeck();
+    const original = deck.map((c) => ({ ...c }));
+    shuffleDeck(deck, createShuffleRng(1, 0));
+    expect(deck).toEqual(original);
   });
 });
 

@@ -37,6 +37,7 @@ import {
   calculateTricksWonPerTeam,
 } from './logic/scoring';
 import { TWENTY_NINE_DEFAULTS } from './config';
+import { createShuffleRng, generateRandomSeed } from './logic/rng';
 import { GAME_PHASES } from '@brotherhood/shared';
 import type { GamePhase } from '@brotherhood/shared';
 
@@ -104,7 +105,10 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
         minBid: settings.minBid ?? TWENTY_NINE_DEFAULTS.minBid,
         setThreshold: settings.setThreshold ?? TWENTY_NINE_DEFAULTS.setThreshold,
         matchLength: settings.matchLength ?? TWENTY_NINE_DEFAULTS.matchLength,
+        seed: settings.seed,
       },
+      randomSeed: settings.seed ?? generateRandomSeed(),
+      shuffleCount: 0,
       matchId: '',
       startedAt: Date.now(),
     };
@@ -270,7 +274,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
 
   private handleStartGame(state: TwentyNineState, broadcasts: Broadcast[]): ActionResult<TwentyNineState> {
     // Build and shuffle deck
-    state.deck = shuffleDeck(buildDeck());
+    state.shuffleCount++;
+    state.deck = shuffleDeck(buildDeck(), createShuffleRng(state.randomSeed, state.shuffleCount));
 
     // Deal first 4 cards
     const { hands, remaining } = firstDeal(state.deck, 4);
@@ -320,7 +325,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     }
 
     // Player requests re-deal
-    state.deck = shuffleDeck(buildDeck());
+    state.shuffleCount++;
+    state.deck = shuffleDeck(buildDeck(), createShuffleRng(state.randomSeed, state.shuffleCount));
     const { hands, remaining } = firstDeal(state.deck, 4);
     state.deck = remaining;
     state.dealCount = 4;
@@ -498,7 +504,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
         payload: {},
       });
       // Reset and redeal
-      state.deck = shuffleDeck(buildDeck());
+      state.shuffleCount++;
+      state.deck = shuffleDeck(buildDeck(), createShuffleRng(state.randomSeed, state.shuffleCount));
       const { hands, remaining } = firstDeal(state.deck, 4);
       state.deck = remaining;
       for (let i = 0; i < 4; i++) {
@@ -1164,7 +1171,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     state._doublePasses = [];
 
     // Build and shuffle new deck
-    state.deck = shuffleDeck(buildDeck());
+    state.shuffleCount++;
+    state.deck = shuffleDeck(buildDeck(), createShuffleRng(state.randomSeed, state.shuffleCount));
 
     // Deal first 4 cards
     const { hands, remaining } = firstDeal(state.deck, 4);

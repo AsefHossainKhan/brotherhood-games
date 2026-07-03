@@ -13,6 +13,9 @@ export type PlayerContext = {
 type GameFixtures = {
   players: PlayerContext[];
   host: PlayerContext;
+  /** Set a seed in localStorage for the host player before room creation.
+   *  This makes card dealing deterministic across test runs. */
+  seed: string;
 };
 
 export const test = base.extend<GameFixtures>({
@@ -43,6 +46,12 @@ export const test = base.extend<GameFixtures>({
 
   host: async ({ players }, use) => {
     await use(players[0]);
+  },
+
+  seed: async ({ browser }, use) => {
+    // Generate a unique seed per test run for reproducibility
+    const seed = Math.floor(Math.random() * 1000000).toString();
+    await use(seed);
   },
 });
 

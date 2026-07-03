@@ -1,5 +1,6 @@
 import type { Card, Suit } from '@brotherhood/shared';
 import { SUITS, RANKS_32 } from '@brotherhood/shared';
+import type { Rng } from './rng';
 
 /**
  * Build a 32-card deck for Bangladeshi 29.
@@ -16,25 +17,29 @@ export function buildDeck(): Card[] {
 }
 
 /**
- * Shuffle a deck using Fisher-Yates algorithm with crypto-random values.
- * Returns a new array (does not mutate the input).
+ * Generate a cryptographically random float in [0, 1).
  */
-export function shuffleDeck(deck: Card[]): Card[] {
-  const shuffled = [...deck];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = cryptoRandomInt(i + 1);
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
+function cryptoRandomFloat(): number {
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  return buf[0] / 4294967296;
 }
 
 /**
- * Generate a cryptographically random integer in [0, max).
+ * Shuffle a deck using Fisher-Yates algorithm.
+ * If an rng is provided, uses it for deterministic shuffling.
+ * Otherwise falls back to crypto-random values.
+ * Returns a new array (does not mutate the input).
  */
-function cryptoRandomInt(max: number): number {
-  const array = new Uint32Array(1);
-  crypto.getRandomValues(array);
-  return array[0] % max;
+export function shuffleDeck(deck: Card[], rng?: Rng): Card[] {
+  const result = [...deck];
+  const rand = rng ?? cryptoRandomFloat;
+
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
 }
 
 /**

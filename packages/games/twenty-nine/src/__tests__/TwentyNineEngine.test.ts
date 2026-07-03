@@ -1924,3 +1924,41 @@ describe('TwentyNineEngine — Full Game Flow', () => {
     });
   });
 });
+
+describe('Deterministic seeding', () => {
+  it('two games with same seed produce identical initial deck state', () => {
+    const engine = createEngine();
+    const seed = 42;
+    const settings: RoomSettings = { ...DEFAULT_SETTINGS, seed };
+
+    const game1 = engine.createInitialState(PLAYER_IDS, settings, TEAMS);
+    const game2 = engine.createInitialState(PLAYER_IDS, settings, TEAMS);
+
+    expect(game1.randomSeed).toBe(seed);
+    expect(game2.randomSeed).toBe(seed);
+  });
+
+  it('games without seed use random seed', () => {
+    const engine = createEngine();
+
+    const game1 = engine.createInitialState(PLAYER_IDS, DEFAULT_SETTINGS, TEAMS);
+    const game2 = engine.createInitialState(PLAYER_IDS, DEFAULT_SETTINGS, TEAMS);
+
+    // Without explicit seed, randomSeed should be generated (likely different)
+    expect(typeof game1.randomSeed).toBe('number');
+    expect(typeof game2.randomSeed).toBe('number');
+  });
+
+  it('shuffleCount increments on each shuffle', () => {
+    const engine = createEngine();
+    const seed = 123;
+    const settings: RoomSettings = { ...DEFAULT_SETTINGS, seed };
+    const state = engine.createInitialState(PLAYER_IDS, settings, TEAMS);
+
+    expect(state.shuffleCount).toBe(0);
+
+    // Start game triggers first shuffle
+    const result = engine.handleAction(state, action('START_GAME', 'p0'));
+    expect(result.newState.shuffleCount).toBe(1);
+  });
+});

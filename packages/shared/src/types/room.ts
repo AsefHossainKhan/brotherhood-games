@@ -47,4 +47,5 @@ export interface RoomSettings {
   allowSpectators: boolean;
   minBid: number; // default 16
   setThreshold: number; // default ±6
+  seed?: number; // optional deterministic seed for reproducible shuffles
 }

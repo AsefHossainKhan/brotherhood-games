@@ -20,6 +20,11 @@ export async function setupPlayer(player: PlayerContext) {
   await page.getByTestId('username-input').fill(username);
 }
 
+/** Set a seed in localStorage for deterministic card dealing */
+export async function setTestSeed(page: Page, seed: string) {
+  await page.evaluate((s) => localStorage.setItem('brotherhood_test_seed', s), seed);
+}
+
 /** Create a room and return the room code */
 export async function createRoom(player: PlayerContext): Promise<string> {
   const { page } = player;
@@ -50,9 +55,16 @@ export async function waitForGameBoard(player: PlayerContext) {
 }
 
 /** Full 4-player game setup: create room → join → start → game board visible → handle weak hands */
-export async function setupFullGame(players: PlayerContext[]): Promise<string> {
+export async function setupFullGame(
+  players: PlayerContext[],
+  options?: { seed?: string }
+): Promise<string> {
   for (const player of players) {
     await setupPlayer(player);
+  }
+  // Set seed in localStorage before creating room (if provided)
+  if (options?.seed) {
+    await setTestSeed(players[0].page, options.seed);
   }
   const roomCode = await createRoom(players[0]);
   for (let i = 1; i < 4; i++) {

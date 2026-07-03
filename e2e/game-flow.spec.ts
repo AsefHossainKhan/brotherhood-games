@@ -4,6 +4,9 @@
  * Comprehensive tests covering every phase of a 29 card game.
  * Uses 4 simulated players via isolated browser contexts.
  *
+ * Each test uses a fixed seed for reproducible card dealing,
+ * ensuring consistent test results across runs.
+ *
  * NOTE: These tests simulate 4 real players with real sockets.
  * Each test takes 15-60s depending on complexity. The full game
  * test can take up to 5 minutes — this is expected.
@@ -27,13 +30,27 @@ import {
   advanceToPlaying,
 } from './helpers';
 
+/** Fixed seeds per test for reproducible card dealing */
+const SEEDS = {
+  lobby: '10001',
+  bidding: '10002',
+  trump: '10003',
+  double: '10004',
+  playing: '10005',
+  followSuit: '10006',
+  scoring: '10007',
+  phaseIndicators: '10008',
+  seventhCard: '10009',
+  joker: '10010',
+} as const;
+
 // ============================================================
 //  1. Lobby & Game Start
 // ============================================================
 
 test.describe('Lobby → Game Start', () => {
   test('4 players join and game starts with game board visible', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.lobby });
 
     for (const player of players) {
       await expect(player.page.getByTestId('game-board')).toBeVisible({ timeout: 20_000 });
@@ -41,7 +58,7 @@ test.describe('Lobby → Game Start', () => {
   });
 
   test('after start, each player sees cards in hand', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.lobby });
 
     for (const player of players) {
       await expect(player.page.getByTestId('game-board')).toBeVisible({ timeout: 20_000 });
@@ -58,7 +75,7 @@ test.describe('Lobby → Game Start', () => {
 
 test.describe('Bidding Phase', () => {
   test('first bidder sees bid panel, others do not', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.bidding });
     await waitForPhase(players, 'Bidding', 20_000);
 
     let bidderCount = 0;
@@ -70,7 +87,7 @@ test.describe('Bidding Phase', () => {
   });
 
   test('player can place a bid and it is reflected', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.bidding });
     await waitForPhase(players, 'Bidding', 20_000);
 
     const bidder = await findPlayerWith(players, 'bid-panel', 15_000);
@@ -84,7 +101,7 @@ test.describe('Bidding Phase', () => {
   });
 
   test('player can pass bid', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.bidding });
     await waitForPhase(players, 'Bidding', 20_000);
 
     const bidder = await findPlayerWith(players, 'bid-panel', 15_000);
@@ -98,14 +115,14 @@ test.describe('Bidding Phase', () => {
   });
 
   test('bidding completes: 1 bid + 3 passes → trump selection', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.bidding });
     await doQuickBidding(players);
 
     await waitForPhase(players, 'Trump Selection', 15_000);
   });
 
   test('bid panel only shows on current bidder screen', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.bidding });
     await waitForPhase(players, 'Bidding', 20_000);
     await players[0].page.waitForTimeout(1_000);
 
@@ -124,7 +141,7 @@ test.describe('Bidding Phase', () => {
 
 test.describe('Trump Selection', () => {
   test('declarer sees trump selector, others do not', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.trump });
     await doQuickBidding(players);
     await waitForPhase(players, 'Trump Selection', 15_000);
 
@@ -137,28 +154,28 @@ test.describe('Trump Selection', () => {
   });
 
   test('select suit trump → moves to double phase', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.trump });
     await doQuickBidding(players);
     await doQuickTrumpSelection(players, 'hearts');
     // doQuickTrumpSelection already waits for Double Phase
   });
 
   test('select 7th card trump → moves to double phase', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.trump });
     await doQuickBidding(players);
     await selectSeventhCardTrump(players);
     // selectSeventhCardTrump already waits for Double Phase
   });
 
   test('select joker → moves to double phase', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.trump });
     await doQuickBidding(players);
     await selectJokerTrump(players);
     // selectJokerTrump already waits for Double Phase
   });
 
   test('each player has 8 cards after second deal', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.trump });
     await doQuickBidding(players);
     await doQuickTrumpSelection(players);
     // doQuickTrumpSelection already waits for Double Phase
@@ -177,7 +194,7 @@ test.describe('Trump Selection', () => {
 
 test.describe('Double Phase', () => {
   test('opponent sees double/pass buttons', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.double });
     await doQuickBidding(players);
     await doQuickTrumpSelection(players);
     // Already in Double Phase
@@ -187,7 +204,7 @@ test.describe('Double Phase', () => {
   });
 
   test('all pass → skip to playing phase', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.double });
     await doQuickBidding(players);
     await doQuickTrumpSelection(players);
     await skipDoublePhase(players);
@@ -196,7 +213,7 @@ test.describe('Double Phase', () => {
   });
 
   test('opponent doubles then pass → playing with ×2', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.double });
     await doQuickBidding(players);
     await doQuickTrumpSelection(players);
     await doDoubleThenPass(players);
@@ -211,7 +228,7 @@ test.describe('Double Phase', () => {
 
 test.describe('Playing Phase', () => {
   test('declarer leads — someone has "Your turn"', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.playing });
     await advanceToPlaying(players);
 
     let turnFound = false;
@@ -225,7 +242,7 @@ test.describe('Playing Phase', () => {
   });
 
   test('current player can play a card', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.playing });
     await advanceToPlaying(players);
 
     const activePlayer = await playCurrentTurn(players);
@@ -233,7 +250,7 @@ test.describe('Playing Phase', () => {
   });
 
   test('trick resolves after 4 cards → winner leads next', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.playing });
     await advanceToPlaying(players);
 
     await playTrick(players);
@@ -254,7 +271,7 @@ test.describe('Playing Phase', () => {
   });
 
   test('exactly one player has "Your turn" at any time', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.playing });
     await advanceToPlaying(players);
 
     let turnCount = 0;
@@ -269,7 +286,7 @@ test.describe('Playing Phase', () => {
   test('full game: all 8 tricks → game ends (up to 5 min)', async ({ players }) => {
     test.setTimeout(300_000); // 5 minutes
 
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.playing });
     await advanceToPlaying(players);
 
     for (let trick = 0; trick < 8; trick++) {
@@ -309,7 +326,7 @@ test.describe('Playing Phase', () => {
 
 test.describe('Follow Suit', () => {
   test('trick plays proceed without crash', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.followSuit });
     await advanceToPlaying(players);
 
     const leader = await playCurrentTurn(players);
@@ -333,7 +350,7 @@ test.describe('Scoring', () => {
   test('scoreboard visible after game (up to 5 min)', async ({ players }) => {
     test.setTimeout(300_000);
 
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.scoring });
     await advanceToPlaying(players);
 
     for (let trick = 0; trick < 8; trick++) {
@@ -370,7 +387,7 @@ test.describe('Scoring', () => {
 
 test.describe('Phase Indicators', () => {
   test('phase label changes through game lifecycle', async ({ players }) => {
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.phaseIndicators });
 
     await waitForPhase(players, 'Bidding', 20_000);
     await doQuickBidding(players);
@@ -390,7 +407,7 @@ test.describe('Seventh-Card Trump Reveal', () => {
   test('7th card mode game plays through without crash (up to 5 min)', async ({ players }) => {
     test.setTimeout(300_000);
 
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.seventhCard });
     await doQuickBidding(players);
     await selectSeventhCardTrump(players);
     await skipDoublePhase(players);
@@ -422,7 +439,7 @@ test.describe('Joker Mode', () => {
   test('joker mode game plays through without crash', async ({ players }) => {
     test.setTimeout(300_000);
 
-    await setupFullGame(players);
+    await setupFullGame(players, { seed: SEEDS.joker });
     await doQuickBidding(players);
     await selectJokerTrump(players);
     await skipDoublePhase(players);

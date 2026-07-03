@@ -38,7 +38,12 @@ export default function HomePage() {
     if (username) {
       syncUsername(username);
     }
-    createRoom('twenty-nine');
+    // Check for a seed in localStorage (set by E2E tests for reproducibility)
+    const seedStr = localStorage.getItem('brotherhood_test_seed');
+    const settings: Record<string, unknown> | undefined = seedStr
+      ? { seed: parseInt(seedStr, 10) }
+      : undefined;
+    createRoom('twenty-nine', settings);
   };
 
   const handleJoinRoom = () => {

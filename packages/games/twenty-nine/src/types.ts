@@ -121,7 +121,12 @@ export interface TwentyNineState {
     minBid: number;
     setThreshold: number;
     matchLength: number;
+    seed?: number;
   };
+
+  // Seeding
+  randomSeed: number;
+  shuffleCount: number;
 
   // Metadata
   matchId: string;
