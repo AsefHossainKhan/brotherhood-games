@@ -24,6 +24,10 @@ export function useGame() {
     socket?.emit('PASS_BID');
   };
 
+  const callBid = () => {
+    socket?.emit('CALL_BID');
+  };
+
   // Trump selection
   const selectTrump = (suit: string) => {
     socket?.emit('SELECT_TRUMP', { suit });
@@ -79,6 +83,7 @@ export function useGame() {
     isMyTurn,
     placeBid,
     passBid,
+    callBid,
     selectTrump,
     selectSeventhCardTrump,
     selectJoker,

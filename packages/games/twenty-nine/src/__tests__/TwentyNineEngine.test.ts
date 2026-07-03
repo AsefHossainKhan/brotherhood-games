@@ -53,7 +53,7 @@ function startGame(engine: TwentyNineEngine, state: TwentyNineState): TwentyNine
   return s;
 }
 
-/** Run through bidding: first bidder bids the given amount, others pass */
+/** Run through bidding: ensure bidderIndex gets to open, then all others pass */
 function doBidding(
   engine: TwentyNineEngine,
   state: TwentyNineState,
@@ -63,15 +63,33 @@ function doBidding(
   let s = state;
   const bidderId = PLAYER_IDS[bidderIndex];
 
-  for (let i = 0; i < 4; i++) {
-    const currentPlayerId = PLAYER_IDS[s.currentTurn];
-    if (currentPlayerId === bidderId) {
-      const result = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: bidAmount }));
-      s = result.newState;
-    } else {
-      const result = engine.handleAction(s, action('PASS_BID', currentPlayerId));
-      s = result.newState;
+  // If it's not the bidder's turn yet, pass through other players first
+  let safety = 20;
+  while (s.phase === GAME_PHASES.BIDDING && PLAYER_IDS[s.currentTurn] !== bidderId && safety-- > 0) {
+    const pid = PLAYER_IDS[s.currentTurn];
+    s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+  }
+
+  // If we exited because all passed (redeal), retry
+  if (s.phase !== GAME_PHASES.BIDDING || !s.bidding.activeBidders.includes(bidderId)) {
+    // Redeal happened or bidder not active — just pass everyone until bidding finishes
+    safety = 20;
+    while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
+      const pid = PLAYER_IDS[s.currentTurn];
+      s = engine.handleAction(s, action('PASS_BID', pid)).newState;
     }
+    return s;
+  }
+
+  // Bidder places the opening bid
+  s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: bidAmount })).newState;
+
+  // Now other players pass one by one
+  safety = 10;
+  while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
+    const pid = PLAYER_IDS[s.currentTurn];
+    if (pid === bidderId) break;
+    s = engine.handleAction(s, action('PASS_BID', pid)).newState;
   }
 
   return s;
@@ -173,11 +191,10 @@ function createControlledGame(
   // Set up bidding
   state.bidding = {
     currentBid: bid,
-    currentBidder: PLAYER_IDS[declarerIndex],
-    highestBid: bid,
     highestBidder: PLAYER_IDS[declarerIndex],
+    activeBidders: [PLAYER_IDS[declarerIndex]],
+    currentChallenger: null,
     bids: [{ playerId: PLAYER_IDS[declarerIndex], bid }],
-    passCount: 3,
   };
 
   // Set up trump
@@ -219,7 +236,7 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       const state = createGame(engine);
       expect(state.players).toHaveLength(4);
       expect(state.phase).toBe(GAME_PHASES.WAITING_FOR_PLAYERS);
-      expect(state.bidding.highestBid).toBeNull();
+      expect(state.bidding.currentBid).toBeNull();
       expect(state.trump.type).toBeNull();
       expect(state.double.level).toBe('normal');
       expect(state.completedTricks).toHaveLength(0);
@@ -292,13 +309,13 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       expect(postDealState.currentTurn).toBe(expectedFirstBidder);
     });
 
-    it('allows placing a valid bid', () => {
+    it('allows placing a valid opening bid', () => {
       const bidderId = PLAYER_IDS[postDealState.currentTurn];
       const result = engine.handleAction(
         postDealState,
         action('PLACE_BID', bidderId, { bid: 16 })
       );
-      expect(result.newState.bidding.highestBid).toBe(16);
+      expect(result.newState.bidding.currentBid).toBe(16);
       expect(result.newState.bidding.highestBidder).toBe(bidderId);
     });
 
@@ -320,20 +337,30 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       expect(validation.valid).toBe(false);
     });
 
-    it('requires bid to be higher than current highest', () => {
+    it('requires raise to be higher than current bid', () => {
       const firstBidder = PLAYER_IDS[postDealState.currentTurn];
       let s = engine.handleAction(postDealState, action('PLACE_BID', firstBidder, { bid: 20 })).newState;
 
-      const secondBidder = PLAYER_IDS[s.currentTurn];
-      const validation = engine.validateAction(s, action('PLACE_BID', secondBidder, { bid: 19 }));
-      expect(validation.valid).toBe(false);
+      // Challenger can raise
+      const challengerId = s.bidding.currentChallenger!;
+      s = engine.handleAction(s, action('PLACE_BID', challengerId, { bid: 22 })).newState;
+      expect(s.bidding.currentBid).toBe(22);
+
+      // Previous bidder can raise back
+      const previousBidder = s.bidding.currentChallenger!;
+      const validation = engine.validateAction(s, action('PLACE_BID', previousBidder, { bid: 21 }));
+      expect(validation.valid).toBe(false); // Must be higher than 22
     });
 
     it('allows passing', () => {
       const bidderId = PLAYER_IDS[postDealState.currentTurn];
-      const result = engine.handleAction(postDealState, action('PASS_BID', bidderId));
-      expect(result.newState.bidding.passCount).toBe(1);
-      expect(result.newState.bidding.bids[0].bid).toBeNull();
+      // First place a bid
+      let s = engine.handleAction(postDealState, action('PLACE_BID', bidderId, { bid: 16 })).newState;
+
+      // Challenger passes
+      const challengerId = s.bidding.currentChallenger!;
+      const result = engine.handleAction(s, action('PASS_BID', challengerId));
+      expect(result.newState.bidding.activeBidders).not.toContain(challengerId);
     });
 
     it('rejects action from wrong player', () => {
@@ -350,12 +377,12 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       const bidderId = PLAYER_IDS[bidderIndex];
       let s = engine.handleAction(postDealState, action('PLACE_BID', bidderId, { bid: 16 })).newState;
 
-      // 3 more players pass
-      for (let i = 0; i < 3; i++) {
+      // All other players pass
+      let safety = 10;
+      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
         const pid = PLAYER_IDS[s.currentTurn];
-        if (pid !== bidderId) {
-          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
-        }
+        if (pid === bidderId) break;
+        s = engine.handleAction(s, action('PASS_BID', pid)).newState;
       }
 
       expect(s.phase).toBe(GAME_PHASES.TRUMP_SELECTION);
@@ -364,30 +391,61 @@ describe('TwentyNineEngine — Full Game Flow', () => {
 
     it('re-deals when all 4 players pass', () => {
       let s = postDealState;
-      for (let i = 0; i < 4; i++) {
+      // All 4 players pass without anyone bidding
+      let safety = 10;
+      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
         const pid = PLAYER_IDS[s.currentTurn];
         s = engine.handleAction(s, action('PASS_BID', pid)).newState;
       }
 
       // Should redeal — back to BIDDING with fresh hands
       expect(s.phase).toBe(GAME_PHASES.BIDDING);
-      expect(s.bidding.passCount).toBe(0);
-      expect(s.bidding.highestBid).toBeNull();
+      expect(s.bidding.currentBid).toBeNull();
+      expect(s.bidding.highestBidder).toBeNull();
       // Each player should have 4 fresh cards
       for (const p of s.players) {
         expect(p.hand).toHaveLength(4);
       }
     });
 
-    it('supports competitive bidding (multiple bids)', () => {
+    it('supports competitive bidding (multiple raises)', () => {
       const firstBidder = PLAYER_IDS[postDealState.currentTurn];
       let s = engine.handleAction(postDealState, action('PLACE_BID', firstBidder, { bid: 16 })).newState;
 
-      const secondBidder = PLAYER_IDS[s.currentTurn];
-      if (secondBidder !== firstBidder) {
-        s = engine.handleAction(s, action('PLACE_BID', secondBidder, { bid: 18 })).newState;
-        expect(s.bidding.highestBid).toBe(18);
+      const challengerId = s.bidding.currentChallenger!;
+      if (challengerId !== firstBidder) {
+        s = engine.handleAction(s, action('PLACE_BID', challengerId, { bid: 18 })).newState;
+        expect(s.bidding.currentBid).toBe(18);
+        expect(s.bidding.highestBidder).toBe(challengerId);
       }
+    });
+
+    it('call forces challenger to raise higher', () => {
+      const firstBidder = PLAYER_IDS[postDealState.currentTurn];
+      let s = engine.handleAction(postDealState, action('PLACE_BID', firstBidder, { bid: 16 })).newState;
+
+      const challengerId = s.bidding.currentChallenger!;
+      s = engine.handleAction(s, action('PLACE_BID', challengerId, { bid: 18 })).newState;
+
+      // Now firstBidder calls (matches 18)
+      s = engine.handleAction(s, action('CALL_BID', firstBidder)).newState;
+
+      // Challenger must raise higher than 18
+      const validation = engine.validateAction(s, action('PLACE_BID', challengerId, { bid: 18 }));
+      expect(validation.valid).toBe(false); // Must be > 18
+
+      const validation2 = engine.validateAction(s, action('PLACE_BID', challengerId, { bid: 19 }));
+      expect(validation2.valid).toBe(true);
+    });
+
+    it('only highest bidder can call', () => {
+      const firstBidder = PLAYER_IDS[postDealState.currentTurn];
+      let s = engine.handleAction(postDealState, action('PLACE_BID', firstBidder, { bid: 16 })).newState;
+
+      const challengerId = s.bidding.currentChallenger!;
+      // Challenger tries to call (should fail - only highest bidder can call)
+      const validation = engine.validateAction(s, action('CALL_BID', challengerId));
+      expect(validation.valid).toBe(false);
     });
   });
 
@@ -404,11 +462,12 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       const bidderId = PLAYER_IDS[s.currentTurn];
       s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
 
-      for (let i = 0; i < 3; i++) {
+      // All other players pass
+      let safety = 10;
+      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
         const pid = PLAYER_IDS[s.currentTurn];
-        if (pid !== bidderId) {
-          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
-        }
+        if (pid === bidderId) break;
+        s = engine.handleAction(s, action('PASS_BID', pid)).newState;
       }
 
       biddingDone = s;
@@ -500,11 +559,11 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       // Bid
       const bidderId = PLAYER_IDS[s.currentTurn];
       s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
-      for (let i = 0; i < 3; i++) {
+      let safety = 10;
+      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
         const pid = PLAYER_IDS[s.currentTurn];
-        if (pid !== bidderId) {
-          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
-        }
+        if (pid === bidderId) break;
+        s = engine.handleAction(s, action('PASS_BID', pid)).newState;
       }
 
       // Select trump
@@ -599,11 +658,11 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       // Bid
       const bidderId = PLAYER_IDS[s.currentTurn];
       s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
-      for (let i = 0; i < 3; i++) {
+      let safety = 10;
+      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
         const pid = PLAYER_IDS[s.currentTurn];
-        if (pid !== bidderId) {
-          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
-        }
+        if (pid === bidderId) break;
+        s = engine.handleAction(s, action('PASS_BID', pid)).newState;
       }
 
       // Select trump
@@ -887,11 +946,11 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       // Bid
       const bidderId = PLAYER_IDS[s.currentTurn];
       s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
-      for (let i = 0; i < 3; i++) {
+      let safety = 10;
+      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
         const pid = PLAYER_IDS[s.currentTurn];
-        if (pid !== bidderId) {
-          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
-        }
+        if (pid === bidderId) break;
+        s = engine.handleAction(s, action('PASS_BID', pid)).newState;
       }
 
       expect(s.phase).toBe(GAME_PHASES.TRUMP_SELECTION);
@@ -920,11 +979,11 @@ describe('TwentyNineEngine — Full Game Flow', () => {
 
       const bidderId = PLAYER_IDS[s.currentTurn];
       s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
-      for (let i = 0; i < 3; i++) {
+      let safety = 10;
+      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
         const pid = PLAYER_IDS[s.currentTurn];
-        if (pid !== bidderId) {
-          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
-        }
+        if (pid === bidderId) break;
+        s = engine.handleAction(s, action('PASS_BID', pid)).newState;
       }
 
       const declarer = s.players.find(p => p.isDeclarer)!;
@@ -945,11 +1004,11 @@ describe('TwentyNineEngine — Full Game Flow', () => {
 
       const bidderId = PLAYER_IDS[s.currentTurn];
       s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
-      for (let i = 0; i < 3; i++) {
+      let safety = 10;
+      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
         const pid = PLAYER_IDS[s.currentTurn];
-        if (pid !== bidderId) {
-          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
-        }
+        if (pid === bidderId) break;
+        s = engine.handleAction(s, action('PASS_BID', pid)).newState;
       }
 
       const declarer = s.players.find(p => p.isDeclarer)!;
@@ -1041,11 +1100,10 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       state.dealCount = 4;
       state.bidding = {
         currentBid: 20,
-        currentBidder: 'p0',
-        highestBid: 20,
         highestBidder: 'p0',
+        activeBidders: ['p0'],
+        currentChallenger: null,
         bids: [{ playerId: 'p0', bid: 20 }],
-        passCount: 3,
       };
       state.players[0].isDeclarer = true;
 
@@ -1104,11 +1162,10 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       state.dealCount = 4;
       state.bidding = {
         currentBid: 20,
-        currentBidder: 'p0',
-        highestBid: 20,
         highestBidder: 'p0',
+        activeBidders: ['p0'],
+        currentChallenger: null,
         bids: [{ playerId: 'p0', bid: 20 }],
-        passCount: 3,
       };
 
       // Give p1 (team 1, defending) the K+Q of hearts in second deal
@@ -1148,11 +1205,11 @@ describe('TwentyNineEngine — Full Game Flow', () => {
 
       const bidderId = PLAYER_IDS[s.currentTurn];
       s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
-      for (let i = 0; i < 3; i++) {
+      let safety = 10;
+      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
         const pid = PLAYER_IDS[s.currentTurn];
-        if (pid !== bidderId) {
-          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
-        }
+        if (pid === bidderId) break;
+        s = engine.handleAction(s, action('PASS_BID', pid)).newState;
       }
 
       const declarer = s.players.find(p => p.isDeclarer)!;
@@ -1218,11 +1275,11 @@ describe('TwentyNineEngine — Full Game Flow', () => {
 
       const bidderId = PLAYER_IDS[s.currentTurn];
       s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
-      for (let i = 0; i < 3; i++) {
+      let safety = 10;
+      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
         const pid = PLAYER_IDS[s.currentTurn];
-        if (pid !== bidderId) {
-          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
-        }
+        if (pid === bidderId) break;
+        s = engine.handleAction(s, action('PASS_BID', pid)).newState;
       }
 
       const declarer = s.players.find(p => p.isDeclarer)!;
@@ -1286,11 +1343,11 @@ describe('TwentyNineEngine — Full Game Flow', () => {
 
       const bidderId = PLAYER_IDS[s.currentTurn];
       s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
-      for (let i = 0; i < 3; i++) {
+      let safety = 10;
+      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
         const pid = PLAYER_IDS[s.currentTurn];
-        if (pid !== bidderId) {
-          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
-        }
+        if (pid === bidderId) break;
+        s = engine.handleAction(s, action('PASS_BID', pid)).newState;
       }
 
       const declarer = s.players.find(p => p.isDeclarer)!;
@@ -1318,11 +1375,11 @@ describe('TwentyNineEngine — Full Game Flow', () => {
 
       const bidderId = PLAYER_IDS[s.currentTurn];
       s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 16 })).newState;
-      for (let i = 0; i < 3; i++) {
+      let safety = 10;
+      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
         const pid = PLAYER_IDS[s.currentTurn];
-        if (pid !== bidderId) {
-          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
-        }
+        if (pid === bidderId) break;
+        s = engine.handleAction(s, action('PASS_BID', pid)).newState;
       }
 
       const declarer = s.players.find(p => p.isDeclarer)!;
@@ -1353,11 +1410,11 @@ describe('TwentyNineEngine — Full Game Flow', () => {
 
       const bidderId = PLAYER_IDS[s.currentTurn];
       s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 16 })).newState;
-      for (let i = 0; i < 3; i++) {
+      let safety = 10;
+      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
         const pid = PLAYER_IDS[s.currentTurn];
-        if (pid !== bidderId) {
-          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
-        }
+        if (pid === bidderId) break;
+        s = engine.handleAction(s, action('PASS_BID', pid)).newState;
       }
 
       const declarer = s.players.find(p => p.isDeclarer)!;
@@ -1385,11 +1442,11 @@ describe('TwentyNineEngine — Full Game Flow', () => {
 
       const bidderId = PLAYER_IDS[s.currentTurn];
       s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 16 })).newState;
-      for (let i = 0; i < 3; i++) {
+      let safety = 10;
+      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
         const pid = PLAYER_IDS[s.currentTurn];
-        if (pid !== bidderId) {
-          s = engine.handleAction(s, action('PASS_BID', pid)).newState;
-        }
+        if (pid === bidderId) break;
+        s = engine.handleAction(s, action('PASS_BID', pid)).newState;
       }
 
       const declarer = s.players.find(p => p.isDeclarer)!;

@@ -31,11 +31,11 @@ export function ScoreBoard() {
       </div>
 
       {/* Bid info */}
-      {bidding.highestBid && (
+      {bidding.currentBid && (
         <div className="text-center">
           <div className="text-xs text-gray-500">Bid</div>
           <div className="text-sm font-medium text-yellow-400">
-            {bidding.highestBid}
+            {bidding.currentBid}
           </div>
         </div>
       )}

@@ -15,6 +15,7 @@ export interface ClientEvents {
   // 29-specific (delegated to game engine)
   PLACE_BID: { bid: number };
   PASS_BID: Record<string, never>;
+  CALL_BID: Record<string, never>;
   SELECT_TRUMP: { suit: string };
   SELECT_SEVENTH_CARD_TRUMP: Record<string, never>;
   SELECT_JOKER: Record<string, never>;
@@ -46,6 +47,14 @@ export interface ServerEvents {
 
   // Bidding
   BID_UPDATED: { playerId: string; bid: number | null; currentHigh: number | null; declarer: string | null };
+  BIDDING_DUEL_UPDATE: {
+    playerId: string;
+    action: 'bid' | 'raise' | 'call' | 'pass';
+    currentBid: number | null;
+    highestBidder: string | null;
+    currentChallenger: string | null;
+    activeBidders: string[];
+  };
   BIDDING_FINISHED: { declarerId: string; winningBid: number };
 
   // Trump

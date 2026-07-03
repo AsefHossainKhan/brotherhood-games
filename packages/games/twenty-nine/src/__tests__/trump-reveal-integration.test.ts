@@ -44,13 +44,22 @@ function dealCards(engine: TwentyNineEngine, state: TwentyNineState): TwentyNine
 
 function finishBidding(engine: TwentyNineEngine, state: TwentyNineState, declarerId: string, bid: number): TwentyNineState {
   let s = state;
-  for (let i = 0; i < 4; i++) {
+  // Pass through players until it's the declarer's turn
+  let safety = 20;
+  while (s.phase === GAME_PHASES.BIDDING && P[s.currentTurn] !== declarerId && safety-- > 0) {
     const pid = P[s.currentTurn];
-    if (pid === declarerId) {
-      s = engine.handleAction(s, act('PLACE_BID', declarerId, { bid })).newState;
-    } else {
-      s = engine.handleAction(s, act('PASS_BID', pid)).newState;
-    }
+    s = engine.handleAction(s, act('PASS_BID', pid)).newState;
+  }
+  // If all passed and redeal happened, just pass everyone through
+  if (s.phase !== GAME_PHASES.BIDDING) return s;
+  // Declarer places the bid
+  s = engine.handleAction(s, act('PLACE_BID', declarerId, { bid })).newState;
+  // Others pass
+  safety = 10;
+  while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
+    const pid = P[s.currentTurn];
+    if (pid === declarerId) break;
+    s = engine.handleAction(s, act('PASS_BID', pid)).newState;
   }
   return s;
 }

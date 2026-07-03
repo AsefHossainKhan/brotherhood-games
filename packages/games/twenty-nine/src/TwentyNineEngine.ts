@@ -63,11 +63,10 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       dealCount: 0,
       bidding: {
         currentBid: null,
-        currentBidder: null,
-        highestBid: null,
         highestBidder: null,
+        activeBidders: [],
+        currentChallenger: null,
         bids: [],
-        passCount: 0,
       },
       dealerSeat: 0,
       trump: {
@@ -129,6 +128,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
         return this.handlePlaceBid(newState, action.playerId, action.payload.bid as number, broadcasts);
       case 'PASS_BID':
         return this.handlePassBid(newState, action.playerId, broadcasts);
+      case 'CALL_BID':
+        return this.handleCallBid(newState, action.playerId, broadcasts);
       case 'SELECT_TRUMP':
         return this.handleSelectTrump(newState, action.playerId, action.payload.suit as string, broadcasts);
       case 'SELECT_SEVENTH_CARD_TRUMP':
@@ -166,6 +167,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
         return this.validatePlaceBid(state, action.playerId, action.payload.bid as number);
       case 'PASS_BID':
         return this.validatePassBid(state, action.playerId);
+      case 'CALL_BID':
+        return this.validateCallBid(state, action.playerId);
       case 'SELECT_TRUMP':
       case 'SELECT_SEVENTH_CARD_TRUMP':
       case 'SELECT_JOKER':
@@ -389,13 +392,14 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     // Bidding starts at dealer's right (counter-clockwise)
     const firstBidderSeat = (state.dealerSeat + 1) % 4;
     state.currentTurn = firstBidderSeat;
+
+    // All 4 players are active bidders initially
     state.bidding = {
       currentBid: null,
-      currentBidder: null,
-      highestBid: null,
       highestBidder: null,
+      activeBidders: state.players.map(p => p.id),
+      currentChallenger: state.players[firstBidderSeat].id,
       bids: [],
-      passCount: 0,
     };
 
     broadcasts.push({
@@ -412,38 +416,84 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     bid: number,
     broadcasts: Broadcast[]
   ): ActionResult<TwentyNineState> {
-    const player = state.players.find((p) => p.id === playerId);
-    if (!player || player.seat !== state.currentTurn) {
-      return { newState: state, broadcasts, errors: [{ code: 'NOT_YOUR_TURN', message: 'Not your turn to bid' }] };
+    // Two cases: opening bid (no highestBidder) or raise (has highestBidder)
+    if (!state.bidding.highestBidder) {
+      // Opening bid: must bid minBid or higher
+      if (bid < state.settings.minBid || bid > TWENTY_NINE_DEFAULTS.maxBid) {
+        return {
+          newState: state,
+          broadcasts,
+          errors: [{ code: 'INVALID_BID', message: `Bid must be between ${state.settings.minBid} and ${TWENTY_NINE_DEFAULTS.maxBid}` }],
+        };
+      }
+
+      state.bidding.bids.push({ playerId, bid });
+      state.bidding.currentBid = bid;
+      state.bidding.highestBidder = playerId;
+
+      // Find the next challenger (next counter-clockwise player who is active)
+      const player = state.players.find(p => p.id === playerId)!;
+      const nextChallenger = this.findNextChallenger(state, player.seat);
+      state.bidding.currentChallenger = nextChallenger;
+
+      broadcasts.push({
+        event: 'BIDDING_DUEL_UPDATE',
+        payload: {
+          playerId,
+          action: 'bid',
+          currentBid: bid,
+          highestBidder: playerId,
+          currentChallenger: nextChallenger,
+          activeBidders: state.bidding.activeBidders,
+        },
+      });
+
+      // Set currentTurn to the challenger's seat
+      if (nextChallenger) {
+        const challengerPlayer = state.players.find(p => p.id === nextChallenger)!;
+        state.currentTurn = challengerPlayer.seat;
+      }
+
+      return { newState: state, broadcasts };
     }
 
-    const minBid = state.bidding.highestBid ? state.bidding.highestBid + 1 : state.settings.minBid;
-    if (bid < minBid || bid > TWENTY_NINE_DEFAULTS.maxBid) {
+    // Raise: must bid higher than current bid
+    if (bid <= (state.bidding.currentBid ?? 0) || bid > TWENTY_NINE_DEFAULTS.maxBid) {
       return {
         newState: state,
         broadcasts,
-        errors: [{ code: 'INVALID_BID', message: `Bid must be between ${minBid} and ${TWENTY_NINE_DEFAULTS.maxBid}` }],
+        errors: [{ code: 'INVALID_BID', message: `Raise must be higher than ${state.bidding.currentBid}` }],
       };
     }
 
     state.bidding.bids.push({ playerId, bid });
     state.bidding.currentBid = bid;
-    state.bidding.currentBidder = playerId;
-    state.bidding.highestBid = bid;
     state.bidding.highestBidder = playerId;
 
+    // After raise, the previous highest bidder becomes the challenger
+    // They can call (match), raise higher, or pass
+    const previousHighestBidder = state.bidding.currentChallenger;
+    state.bidding.currentChallenger = previousHighestBidder;
+
     broadcasts.push({
-      event: 'BID_UPDATED',
+      event: 'BIDDING_DUEL_UPDATE',
       payload: {
         playerId,
-        bid,
-        currentHigh: bid,
-        declarer: playerId,
+        action: 'raise',
+        currentBid: bid,
+        highestBidder: playerId,
+        currentChallenger: previousHighestBidder,
+        activeBidders: state.bidding.activeBidders,
       },
     });
 
-    // Move to next bidder
-    return this.advanceBidding(state, broadcasts);
+    // Set currentTurn to the new challenger's seat
+    if (previousHighestBidder) {
+      const challengerPlayer = state.players.find(p => p.id === previousHighestBidder)!;
+      state.currentTurn = challengerPlayer.seat;
+    }
+
+    return { newState: state, broadcasts };
   }
 
   private handlePassBid(
@@ -451,45 +501,90 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     playerId: string,
     broadcasts: Broadcast[]
   ): ActionResult<TwentyNineState> {
-    const player = state.players.find((p) => p.id === playerId);
-    if (!player || player.seat !== state.currentTurn) {
-      return { newState: state, broadcasts, errors: [{ code: 'NOT_YOUR_TURN', message: 'Not your turn to bid' }] };
+    // Remove from active bidders
+    state.bidding.activeBidders = state.bidding.activeBidders.filter(id => id !== playerId);
+    state.bidding.bids.push({ playerId, bid: null });
+
+    // If this was the challenger, find next challenger and update currentTurn
+    if (state.bidding.currentChallenger === playerId) {
+      const player = state.players.find(p => p.id === playerId)!;
+      const nextChallenger = this.findNextChallenger(state, player.seat);
+      state.bidding.currentChallenger = nextChallenger;
+
+      // Update currentTurn to the new challenger
+      if (nextChallenger) {
+        const challengerPlayer = state.players.find(p => p.id === nextChallenger)!;
+        state.currentTurn = challengerPlayer.seat;
+      }
     }
 
-    state.bidding.bids.push({ playerId, bid: null });
-    state.bidding.passCount++;
-
     broadcasts.push({
-      event: 'BID_UPDATED',
+      event: 'BIDDING_DUEL_UPDATE',
       payload: {
         playerId,
-        bid: null,
-        currentHigh: state.bidding.highestBid,
-        declarer: state.bidding.highestBidder,
+        action: 'pass',
+        currentBid: state.bidding.currentBid,
+        highestBidder: state.bidding.highestBidder,
+        currentChallenger: state.bidding.currentChallenger,
+        activeBidders: state.bidding.activeBidders,
       },
     });
 
     return this.advanceBidding(state, broadcasts);
   }
 
+  private handleCallBid(
+    state: TwentyNineState,
+    playerId: string,
+    broadcasts: Broadcast[]
+  ): ActionResult<TwentyNineState> {
+    // Call is when the highest bidder matches the bid, forcing the challenger to raise or pass
+    if (playerId !== state.bidding.highestBidder) {
+      return { newState: state, broadcasts, errors: [{ code: 'NOT_HIGHEST_BIDDER', message: 'Only the highest bidder can call' }] };
+    }
+
+    state.bidding.bids.push({ playerId, bid: state.bidding.currentBid });
+
+    // After call, the challenger must raise higher or pass
+    // The challenger stays as challenger (they must act)
+    broadcasts.push({
+      event: 'BIDDING_DUEL_UPDATE',
+      payload: {
+        playerId,
+        action: 'call',
+        currentBid: state.bidding.currentBid,
+        highestBidder: state.bidding.highestBidder,
+        currentChallenger: state.bidding.currentChallenger,
+        activeBidders: state.bidding.activeBidders,
+      },
+    });
+
+    // currentTurn stays on the challenger - they must raise or pass
+    return { newState: state, broadcasts };
+  }
+
   private advanceBidding(
     state: TwentyNineState,
     broadcasts: Broadcast[]
   ): ActionResult<TwentyNineState> {
-    // Check if bidding is complete
-    // Case 1: All 4 players passed — redeal
-    if (state.bidding.passCount >= 4) {
+    // Check if bidding is complete: only one active bidder remains
+    if (state.bidding.activeBidders.length <= 1) {
       return this.finishBidding(state, broadcasts);
     }
 
-    // Case 2: 3 players passed and one has bid — bidding finished
-    if (state.bidding.passCount >= 3 && state.bidding.highestBidder) {
+    // If all active bidders have passed without anyone bidding (no highestBidder)
+    if (!state.bidding.highestBidder && state.bidding.activeBidders.length > 0) {
+      // Check if the only remaining bidder is the one who hasn't passed yet
+      // This handles the case where 3 passed and 1 never got to bid
+      // Actually, if no one has bid yet, we need to continue
+    }
+
+    // If there's a highestBidder but no currentChallenger (shouldn't happen, but handle it)
+    if (state.bidding.highestBidder && !state.bidding.currentChallenger) {
       return this.finishBidding(state, broadcasts);
     }
 
-    // Move to next bidder (counter-clockwise)
-    state.currentTurn = (state.currentTurn + 1) % 4;
-
+    // Continue bidding
     return { newState: state, broadcasts };
   }
 
@@ -522,7 +617,7 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       event: 'BIDDING_FINISHED',
       payload: {
         declarerId,
-        winningBid: state.bidding.highestBid!,
+        winningBid: state.bidding.currentBid!,
       },
     });
 
@@ -667,7 +762,7 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
           // Only the first player found with marriage counts (typically the holder)
           // Marriage on the bidding team lowers effective bid; on defending team raises it
           const effectiveBid = calculateEffectiveBid(
-            state.bidding.highestBid!,
+            state.bidding.currentBid!,
             player.team,
             declarer.team
           );
@@ -977,7 +1072,7 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     if (marriageSuit) {
       const declarer = state.players.find((p) => p.isDeclarer)!;
       const effectiveBid = calculateEffectiveBid(
-        state.bidding.highestBid!,
+        state.bidding.currentBid!,
         player.team,
         declarer.team
       );
@@ -1035,7 +1130,7 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
 
     // Determine effective bid
     const declarer = state.players.find((p) => p.isDeclarer)!;
-    const effectiveBid = state.marriage?.effectiveBid ?? state.bidding.highestBid!;
+    const effectiveBid = state.marriage?.effectiveBid ?? state.bidding.currentBid!;
 
     // Check if declarer succeeded
     const bidSuccess = didDeclarerSucceed(teamPoints[declarer.team], effectiveBid);
@@ -1126,11 +1221,10 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     // Reset bidding
     state.bidding = {
       currentBid: null,
-      currentBidder: null,
-      highestBid: null,
       highestBidder: null,
+      activeBidders: [],
+      currentChallenger: null,
       bids: [],
-      passCount: 0,
     };
 
     // Reset trump
@@ -1230,8 +1324,18 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     if (state.phase !== GAME_PHASES.BIDDING) return { valid: false, error: 'Not in bidding phase' };
     const player = state.players.find((p) => p.id === playerId);
     if (!player || player.seat !== state.currentTurn) return { valid: false, error: 'Not your turn' };
-    const minBid = state.bidding.highestBid ? state.bidding.highestBid + 1 : state.settings.minBid;
-    if (bid < minBid || bid > TWENTY_NINE_DEFAULTS.maxBid) return { valid: false, error: `Bid must be ${minBid}-${TWENTY_NINE_DEFAULTS.maxBid}` };
+
+    // Check if player is an active bidder
+    if (!state.bidding.activeBidders.includes(playerId)) return { valid: false, error: 'You are not an active bidder' };
+
+    // Opening bid case
+    if (!state.bidding.highestBidder) {
+      if (bid < state.settings.minBid || bid > TWENTY_NINE_DEFAULTS.maxBid) return { valid: false, error: `Bid must be ${state.settings.minBid}-${TWENTY_NINE_DEFAULTS.maxBid}` };
+      return { valid: true };
+    }
+
+    // Raise case: must be higher than current bid
+    if (bid <= (state.bidding.currentBid ?? 0) || bid > TWENTY_NINE_DEFAULTS.maxBid) return { valid: false, error: `Raise must be higher than ${state.bidding.currentBid}` };
     return { valid: true };
   }
 
@@ -1239,6 +1343,18 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     if (state.phase !== GAME_PHASES.BIDDING) return { valid: false, error: 'Not in bidding phase' };
     const player = state.players.find((p) => p.id === playerId);
     if (!player || player.seat !== state.currentTurn) return { valid: false, error: 'Not your turn' };
+    if (!state.bidding.activeBidders.includes(playerId)) return { valid: false, error: 'You are not an active bidder' };
+    return { valid: true };
+  }
+
+  private validateCallBid(state: TwentyNineState, playerId: string): { valid: boolean; error?: string } {
+    if (state.phase !== GAME_PHASES.BIDDING) return { valid: false, error: 'Not in bidding phase' };
+    const player = state.players.find((p) => p.id === playerId);
+    if (!player || player.seat !== state.currentTurn) return { valid: false, error: 'Not your turn' };
+    // Only the highest bidder can call
+    if (playerId !== state.bidding.highestBidder) return { valid: false, error: 'Only the highest bidder can call' };
+    // Must have a current bid to call
+    if (!state.bidding.currentBid) return { valid: false, error: 'No bid to call' };
     return { valid: true };
   }
 
@@ -1311,6 +1427,18 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
   }
 
   // ---- Helpers ----
+
+  private findNextChallenger(state: TwentyNineState, fromSeat: number): string | null {
+    // Find the next active bidder counter-clockwise from the given seat
+    for (let i = 1; i <= 3; i++) {
+      const seat = (fromSeat + i) % 4;
+      const player = state.players[seat];
+      if (state.bidding.activeBidders.includes(player.id) && player.id !== state.bidding.highestBidder) {
+        return player.id;
+      }
+    }
+    return null;
+  }
 
   private getNextOpponentSeat(state: TwentyNineState, declarerSeat: number): number {
     // Opponents are seats that are different team

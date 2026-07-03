@@ -40,11 +40,10 @@ interface ScoreState {
 
 interface BidState {
   currentBid: number | null;
-  currentBidder: string | null;
-  highestBid: number | null;
   highestBidder: string | null;
+  activeBidders: string[];
+  currentChallenger: string | null;
   bids: { playerId: string; bid: number | null }[];
-  passCount: number;
 }
 
 interface TrumpState {
@@ -86,11 +85,10 @@ export const useGameStore = create<GameState>((set) => ({
   players: [],
   bidding: {
     currentBid: null,
-    currentBidder: null,
-    highestBid: null,
     highestBidder: null,
+    activeBidders: [],
+    currentChallenger: null,
     bids: [],
-    passCount: 0,
   },
   trump: {
     type: null,
@@ -148,11 +146,10 @@ export const useGameStore = create<GameState>((set) => ({
       players: [],
       bidding: {
         currentBid: null,
-        currentBidder: null,
-        highestBid: null,
         highestBidder: null,
+        activeBidders: [],
+        currentChallenger: null,
         bids: [],
-        passCount: 0,
       },
       trump: { type: null, suit: null, isRevealed: false, seventhCard: null, mustPlayTrump: false },
       double: { level: 'normal', calledBy: null, multiplier: 1 },

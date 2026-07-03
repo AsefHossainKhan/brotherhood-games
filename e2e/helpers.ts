@@ -151,18 +151,10 @@ export async function waitForMyTurn(page: Page, timeout = 20_000) {
 //  Bidding Helpers
 // ============================================================
 
-/**
- * Run through the bidding phase: first player with bid panel bids 16, others pass.
- * Returns once trump selection phase is reached.
- * Handles weak hands automatically (keeps hand to proceed to bidding).
- */
-export async function doQuickBidding(players: PlayerContext[]) {
-  // Wait for bidding to start — but handle weak hands first
-  const deadline = Date.now() + 60_000;
-  let biddingFound = false;
-
-  while (Date.now() < deadline && !biddingFound) {
-    // Check for weak hand panels and dismiss them
+/** Wait for bidding phase to appear on any player */
+async function waitForBidding(players: PlayerContext[], timeout = 30_000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
     for (const player of players) {
       const keepBtn = player.page.getByTestId('keep-weak-hand-btn');
       if (await keepBtn.isVisible().catch(() => false)) {
@@ -170,71 +162,102 @@ export async function doQuickBidding(players: PlayerContext[]) {
         await player.page.waitForTimeout(800);
       }
     }
-
-    // Check if bidding text appears
     for (const p of players) {
-      const found = await p.page.getByText('Bidding', { exact: false }).first().isVisible().catch(() => false);
-      if (found) {
-        biddingFound = true;
-        break;
+      if (await p.page.getByText('Bidding', { exact: false }).first().isVisible().catch(() => false)) {
+        return;
       }
     }
+    await players[0].page.waitForTimeout(500);
+  }
+  throw new Error('Bidding phase did not start');
+}
 
-    if (!biddingFound) {
-      await players[0].page.waitForTimeout(500);
+/**
+ * Detect which player is the active bidder.
+ * Strategy: check each player's GameStatus for "🎯 Your turn" text.
+ * The GameStatus renders on every page regardless of isMyTurn.
+ * The active player sees "🎯 Your turn" while others see "X's turn".
+ */
+async function findActiveBidder(players: PlayerContext[]): Promise<PlayerContext | null> {
+  let found: PlayerContext | null = null;
+  for (const player of players) {
+    const turnText = await player.page.locator('[data-testid="game-status"]').textContent().catch(() => '');
+    const isMyTurn = turnText?.includes('Your turn') ?? false;
+    if (isMyTurn) {
+      if (found) return null;
+      found = player;
     }
   }
+  return found;
+}
 
-  if (!biddingFound) {
-    throw new Error('Bidding phase did not start within timeout');
-  }
-
-  let bidPlaced = false;
-
-  // Now run through the bidding actions
-  const actionDeadline = Date.now() + 60_000;
-
-  while (Date.now() < actionDeadline) {
-    // Check if we've moved past bidding (trump selector visible)
-    for (const p of players) {
-      try {
-        await expect(p.page.getByTestId('trump-selector')).toBeVisible({ timeout: 500 });
-        return; // Trump selection reached
-      } catch {
-        // Not on this player yet
-      }
-    }
-
-    // Try to act on each player
-    for (const player of players) {
-      const page = player.page;
-
-      // If this player has the bid panel, either bid or pass
-      const hasPanel = await page.getByTestId('bid-panel').isVisible().catch(() => false);
-      if (hasPanel) {
-        if (!bidPlaced) {
-          // Place the first bid (minimum 16)
-          const bidBtn = page.getByTestId('place-bid-btn');
-          if (await bidBtn.isVisible().catch(() => false)) {
-            await bidBtn.click();
-            bidPlaced = true;
-            await page.waitForTimeout(800);
-            continue;
-          }
-        }
-        // Pass
-        const passBtn = page.getByTestId('pass-bid-btn');
-        if (await passBtn.isVisible().catch(() => false)) {
-          await passBtn.click();
-          await page.waitForTimeout(800);
-        }
-      }
-    }
-
+/** Poll until exactly one player has an enabled bidding action */
+export async function waitForActiveBidder(players: PlayerContext[], timeout = 20_000): Promise<PlayerContext> {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const bidder = await findActiveBidder(players);
+    if (bidder) return bidder;
     await players[0].page.waitForTimeout(300);
   }
+  throw new Error('No active bidder found within timeout');
+}
 
-  throw new Error('Bidding phase did not complete within timeout');
+/** Assert exactly one player sees "Your turn" in the game status */
+export async function assertSingleActiveBidder(players: PlayerContext[]) {
+  let count = 0;
+  for (const player of players) {
+    const turnText = await player.page.locator('[data-testid="game-status"]').textContent().catch(() => '');
+    if (turnText?.includes('Your turn')) count++;
+  }
+  expect(count).toBe(1);
+}
+
+export type BidAction = { type: 'bid'; value: number } | { type: 'pass' } | { type: 'call' };
+
+/** Execute a single bid action on the given player. Uses click() which auto-waits for actionability. */
+export async function executeBidAction(player: PlayerContext, action: BidAction) {
+  const page = player.page;
+  // Wait a beat for the UI to settle after state propagation
+  await page.waitForTimeout(300);
+
+  if (action.type === 'bid') {
+    // Adjust slider to desired value
+    const slider = page.locator('input[type="range"]');
+    if (await slider.isVisible({ timeout: 3_000 }).catch(() => false)) {
+      await slider.fill(String(action.value));
+      await page.waitForTimeout(100);
+    }
+    // Click the bid/raise button — Playwright waits for it to be actionable
+    await page.getByTestId('place-bid-btn').click({ timeout: 5_000 });
+  } else if (action.type === 'pass') {
+    await page.getByTestId('pass-bid-btn').click({ timeout: 5_000 });
+  } else if (action.type === 'call') {
+    await page.getByTestId('call-bid-btn').click({ timeout: 5_000 });
+  }
+  // Wait for state to propagate to all clients
+  await page.waitForTimeout(800);
+}
+
+/** Run a full bidding scenario: array of actions executed sequentially on the active bidder */
+export async function runBiddingScenario(players: PlayerContext[], actions: BidAction[]) {
+  await waitForBidding(players);
+  for (const action of actions) {
+    const bidder = await waitForActiveBidder(players);
+    await executeBidAction(bidder, action);
+  }
+}
+
+/**
+ * Quick bidding: first bidder opens 16, everyone else passes.
+ * Ends when trump selection is reached.
+ */
+export async function doQuickBidding(players: PlayerContext[]) {
+  await runBiddingScenario(players, [
+    { type: 'bid', value: 16 },
+    { type: 'pass' },
+    { type: 'pass' },
+    { type: 'pass' },
+  ]);
 }
 
 // ============================================================

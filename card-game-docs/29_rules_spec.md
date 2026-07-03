@@ -39,12 +39,39 @@ They may optionally request cancellation.
 
 ## Bidding
 
-- Starts at dealer's right
-- Counter-clockwise
+Bangladeshi 29 uses a **duel-style bidding system**:
+
+- Starts at dealer's right (counter-clockwise)
 - Single bidding round
 - Min bid = 16
 - Max bid = 28
-- Pass allowed
+
+### How It Works
+
+1. **Opening Bid**: First player must bid 16 or higher, or pass
+2. **Duel Begins**: After opening bid, it becomes a head-to-head between the bid holder and a challenger
+3. **Challenger Actions**:
+   - **Raise**: Bid higher than current bid
+   - **Pass**: Eliminate yourself permanently
+4. **Bid Holder Actions**:
+   - **Call**: Match current bid, force challenger to raise higher
+   - **Raise**: Bid higher than current bid
+   - **Pass**: Eliminate yourself permanently
+5. **When Challenger Passes**: Next counter-clockwise player becomes the new challenger
+6. **When Only One Remains**: That player wins the bid and becomes declarer
+7. **All Pass Without Bid**: Redeal cards
+
+### Example Flow
+
+Dealer = P4. Bidding starts at P1.
+
+1. P1 bids 16 (opening bid)
+2. P2 raises to 18
+3. P1 calls (matches 18, P2 must raise higher or pass)
+4. P2 passes
+5. P3 passes
+6. P4 passes
+7. P1 wins bid at 18, becomes declarer
 
 Highest bidder becomes declarer.
 

@@ -25,7 +25,7 @@ export function GameStatus() {
   const isMyTurn = currentPlayer?.id === guestId;
 
   return (
-    <div className="flex items-center gap-4">
+    <div data-testid="game-status" className="flex items-center gap-4">
       {/* Phase */}
       <div className="rounded-lg bg-gray-800 px-3 py-1.5">
         <span className="text-xs text-gray-500">Phase: </span>

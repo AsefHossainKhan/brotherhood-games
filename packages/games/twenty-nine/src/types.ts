@@ -32,11 +32,10 @@ export interface Trick {
 
 export interface BidInfo {
   currentBid: number | null;
-  currentBidder: string | null; // player id
-  highestBid: number | null;
-  highestBidder: string | null; // declarer
-  bids: { playerId: string; bid: number | null }[]; // null = pass
-  passCount: number;
+  highestBidder: string | null;
+  activeBidders: string[];          // player IDs still in contention
+  currentChallenger: string | null; // whose turn it is to respond
+  bids: { playerId: string; bid: number | null }[];
 }
 
 // ---- Trump ----

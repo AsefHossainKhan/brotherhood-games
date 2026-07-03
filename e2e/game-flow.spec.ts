@@ -28,6 +28,11 @@ import {
   playCurrentTurn,
   playTrick,
   advanceToPlaying,
+  runBiddingScenario,
+  waitForActiveBidder,
+  assertSingleActiveBidder,
+  executeBidAction,
+  type BidAction,
 } from './helpers';
 
 /** Fixed seeds per test for reproducible card dealing */
@@ -74,64 +79,115 @@ test.describe('Lobby → Game Start', () => {
 // ============================================================
 
 test.describe('Bidding Phase', () => {
-  test('first bidder sees bid panel, others do not', async ({ players }) => {
-    await setupFullGame(players, { seed: SEEDS.bidding });
-    await waitForPhase(players, 'Bidding', 20_000);
-
-    let bidderCount = 0;
-    for (const player of players) {
-      const hasPanel = await player.page.getByTestId('bid-panel').isVisible().catch(() => false);
-      if (hasPanel) bidderCount++;
-    }
-    expect(bidderCount).toBe(1);
-  });
-
-  test('player can place a bid and it is reflected', async ({ players }) => {
-    await setupFullGame(players, { seed: SEEDS.bidding });
-    await waitForPhase(players, 'Bidding', 20_000);
-
-    const bidder = await findPlayerWith(players, 'bid-panel', 15_000);
-    expect(bidder).not.toBeNull();
-
-    const bidBtn = bidder!.page.getByTestId('place-bid-btn');
-    await expect(bidBtn).toBeVisible({ timeout: 5_000 });
-    await bidBtn.click();
-
-    await bidder!.page.waitForTimeout(1_500);
-  });
-
-  test('player can pass bid', async ({ players }) => {
-    await setupFullGame(players, { seed: SEEDS.bidding });
-    await waitForPhase(players, 'Bidding', 20_000);
-
-    const bidder = await findPlayerWith(players, 'bid-panel', 15_000);
-    expect(bidder).not.toBeNull();
-
-    const passBtn = bidder!.page.getByTestId('pass-bid-btn');
-    await expect(passBtn).toBeVisible({ timeout: 5_000 });
-    await passBtn.click();
-
-    await bidder!.page.waitForTimeout(1_500);
-  });
-
-  test('bidding completes: 1 bid + 3 passes → trump selection', async ({ players }) => {
-    await setupFullGame(players, { seed: SEEDS.bidding });
-    await doQuickBidding(players);
-
-    await waitForPhase(players, 'Trump Selection', 15_000);
-  });
-
-  test('bid panel only shows on current bidder screen', async ({ players }) => {
+  test('exactly one player has turn indicator at any time', async ({ players }) => {
     await setupFullGame(players, { seed: SEEDS.bidding });
     await waitForPhase(players, 'Bidding', 20_000);
     await players[0].page.waitForTimeout(1_000);
+    await assertSingleActiveBidder(players);
+  });
 
-    let panelsVisible = 0;
-    for (const player of players) {
-      const hasPanel = await player.page.getByTestId('bid-panel').isVisible().catch(() => false);
-      if (hasPanel) panelsVisible++;
-    }
-    expect(panelsVisible).toBe(1);
+  test('simple: first bidder opens 16, three others pass → declarer wins', async ({ players }) => {
+    await setupFullGame(players, { seed: SEEDS.bidding });
+    await runBiddingScenario(players, [
+      { type: 'bid', value: 16 },
+      { type: 'pass' },
+      { type: 'pass' },
+      { type: 'pass' },
+    ]);
+    await waitForPhase(players, 'Trump Selection', 15_000);
+  });
+
+  test('raise: opener bids 16, challenger raises to 18, all remaining pass → challenger wins', async ({ players }) => {
+    await setupFullGame(players, { seed: SEEDS.bidding });
+    // After raise, turn goes back to opener who must pass too
+    await runBiddingScenario(players, [
+      { type: 'bid', value: 16 },  // opener bids
+      { type: 'bid', value: 18 },  // challenger raises
+      { type: 'pass' },            // opener passes (was challenger after raise)
+      { type: 'pass' },            // next player passes
+      { type: 'pass' },            // last player passes
+    ]);
+    await waitForPhase(players, 'Trump Selection', 15_000);
+  });
+
+  test('sequential passes: opener bids 16, next 3 players pass one by one', async ({ players }) => {
+    await setupFullGame(players, { seed: SEEDS.bidding });
+    await runBiddingScenario(players, [
+      { type: 'bid', value: 16 },
+      { type: 'pass' },
+      { type: 'pass' },
+      { type: 'pass' },
+    ]);
+    await waitForPhase(players, 'Trump Selection', 15_000);
+  });
+
+  test('all pass without bidding → redeal → bidding restarts', async ({ players }) => {
+    await setupFullGame(players, { seed: SEEDS.bidding });
+    // All 4 pass without anyone bidding — triggers redeal
+    await runBiddingScenario(players, [
+      { type: 'pass' },
+      { type: 'pass' },
+      { type: 'pass' },
+      { type: 'pass' },
+    ]);
+    // After redeal, verify bidding is still active (new round)
+    await waitForPhase(players, 'Bidding', 20_000);
+    // Verify a new active bidder exists
+    const bidder = await waitForActiveBidder(players, 15_000);
+    expect(bidder).not.toBeNull();
+  });
+
+  test('raise then sequential passes: opener 16, challenger 18, remaining three pass one by one', async ({ players }) => {
+    await setupFullGame(players, { seed: SEEDS.bidding });
+    await runBiddingScenario(players, [
+      { type: 'bid', value: 16 },
+      { type: 'bid', value: 18 },
+      { type: 'pass' },  // opener passes after raise
+      { type: 'pass' },  // next player
+      { type: 'pass' },  // last player
+    ]);
+    await waitForPhase(players, 'Trump Selection', 15_000);
+  });
+
+  test('call scenario: P2 takes from P1, P3 takes from P2, P4 raises, P3 calls, P4 passes → P3 wins', async ({ players }) => {
+    await setupFullGame(players, { seed: SEEDS.bidding });
+    // Full sequence: P1 opens, P2 raises, P1 passes, P3 raises, P2 passes, P4 raises, P3 calls, P4 passes
+    await runBiddingScenario(players, [
+      { type: 'bid', value: 16 },  // P1 opens
+      { type: 'bid', value: 18 },  // P2 raises
+      { type: 'pass' },            // P1 passes
+      { type: 'bid', value: 20 },  // P3 raises
+      { type: 'pass' },            // P2 passes
+      { type: 'bid', value: 22 },  // P4 raises
+      { type: 'call' },            // P3 calls (matches 22)
+      { type: 'pass' },            // P4 passes — only P3 remains
+    ]);
+    await waitForPhase(players, 'Trump Selection', 15_000);
+  });
+
+  test('each action transitions turn to next player correctly', async ({ players }) => {
+    await setupFullGame(players, { seed: SEEDS.bidding });
+    await waitForPhase(players, 'Bidding', 20_000);
+
+    // First bidder places opening bid
+    const first = await waitForActiveBidder(players);
+    await executeBidAction(first, { type: 'bid', value: 16 });
+    await assertSingleActiveBidder(players);
+
+    // Next player raises
+    const second = await waitForActiveBidder(players);
+    expect(second).not.toBe(first);
+    await executeBidAction(second, { type: 'bid', value: 18 });
+    await assertSingleActiveBidder(players);
+
+    // Turn goes back to original bidder — they pass
+    const third = await waitForActiveBidder(players);
+    await executeBidAction(third, { type: 'pass' });
+    await assertSingleActiveBidder(players);
+
+    // Continue until bidding finishes
+    const fourth = await waitForActiveBidder(players);
+    await executeBidAction(fourth, { type: 'pass' });
   });
 });
 
