@@ -15,7 +15,7 @@ export function TrumpRevealPanel() {
   const currentPlayer = players[currentTurn];
   const isMyTurn = currentPlayer?.id === guestId;
 
-  if (phase !== 'PLAYING' || trump.isRevealed || !trump.type || trump.type === 'joker' || !isMyTurn) {
+  if (phase !== 'PLAYING' || trump.isRevealed || !trump.type || !isMyTurn) {
     return null;
   }
 
@@ -42,7 +42,9 @@ export function TrumpRevealPanel() {
         Reveal Trump
       </button>
       <span className="text-xs text-gray-500">
-        {hasTrumpCards
+        {trump.type === 'joker'
+          ? 'Reveals there is no trump this game'
+          : hasTrumpCards
           ? 'You have trump cards — you must play one after revealing'
           : 'Trump will be active in trick calculations'}
       </span>

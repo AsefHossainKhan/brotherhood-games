@@ -44,7 +44,9 @@ export function ScoreBoard() {
       {trump.type === 'joker' && (
         <div className="text-center">
           <div className="text-xs text-gray-500">Trump</div>
-          <div className="text-sm font-medium text-green-400">No Trump</div>
+          <div className="text-sm font-medium text-green-400">
+            {trump.isRevealed ? 'No Trump' : 'Hidden'}
+          </div>
         </div>
       )}
       {trump.type && trump.type !== 'joker' && (

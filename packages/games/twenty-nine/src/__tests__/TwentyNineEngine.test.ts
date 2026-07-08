@@ -993,9 +993,9 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       const nonDeclarer = s.players.find(p => !p.isDeclarer)!;
       const visible = engine.getVisibleState(s, nonDeclarer.id, 'player');
 
-      // Trump suit should be hidden for non-declarers
+      // Trump suit and type should be hidden for non-declarers
       expect((visible.trump as any).suit).toBeNull();
-      expect((visible.trump as any).type).toBe('seventh-card');
+      expect((visible.trump as any).type).toBeNull();
     });
 
     it('seventh-card trump: can be revealed during play', () => {
@@ -1524,11 +1524,13 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       // Non-declarer does NOT see the trump suit
       const opponentVisible = engine.getVisibleState(s, 'p1', 'player') as any;
       expect(opponentVisible.trump.suit).toBeNull();
+      expect(opponentVisible.trump.type).toBeNull();
       expect(opponentVisible.trump.isRevealed).toBe(false);
 
       // Partner also does NOT see the trump suit
       const partnerVisible = engine.getVisibleState(s, 'p2', 'player') as any;
       expect(partnerVisible.trump.suit).toBeNull();
+      expect(partnerVisible.trump.type).toBeNull();
     });
 
     it('seventh-card trump is hidden from non-declarers until revealed', () => {
@@ -1546,13 +1548,14 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       expect(declarerVisible.trump.suit).not.toBeNull();
       expect(declarerVisible.trump.isRevealed).toBe(false);
 
-      // Non-declarer does NOT see the trump suit
+      // Non-declarer does NOT see the trump suit or type
       const opponentVisible = engine.getVisibleState(s, 'p1', 'player') as any;
       expect(opponentVisible.trump.suit).toBeNull();
+      expect(opponentVisible.trump.type).toBeNull();
       expect(opponentVisible.trump.isRevealed).toBe(false);
     });
 
-    it('joker trump shows no suit to anyone', () => {
+    it('joker trump is hidden from non-declarers until revealed', () => {
       const engine = createEngine();
       const state = createGame(engine);
       let s = startGame(engine, state);
@@ -1561,11 +1564,14 @@ describe('TwentyNineEngine — Full Game Flow', () => {
 
       expect(s.trump.type).toBe('joker');
 
-      // Everyone sees null suit
+      // Declarer sees the trump type
       const declarerVisible = engine.getVisibleState(s, 'p0', 'player') as any;
+      expect(declarerVisible.trump.type).toBe('joker');
       expect(declarerVisible.trump.suit).toBeNull();
 
+      // Non-declarer does NOT see the trump type
       const opponentVisible = engine.getVisibleState(s, 'p1', 'player') as any;
+      expect(opponentVisible.trump.type).toBeNull();
       expect(opponentVisible.trump.suit).toBeNull();
     });
 
@@ -1832,8 +1838,9 @@ describe('TwentyNineEngine — Full Game Flow', () => {
       s = completeBidding(engine, s, 'p0', 20, action('SELECT_TRUMP', 'p0', { suit: 'hearts' }));
       s = skipDoublePhase(engine, s);
 
-      // Spectator view
+      // Spectator view — type and suit both hidden
       const spectatorVisible = engine.getVisibleState(s, 'spectator1', 'spectator') as any;
+      expect(spectatorVisible.trump.type).toBeNull();
       expect(spectatorVisible.trump.suit).toBeNull();
       expect(spectatorVisible.trump.isRevealed).toBe(false);
     });

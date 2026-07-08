@@ -210,7 +210,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       })),
       bidding: state.bidding,
       trump: {
-        type: state.trump.type,
+        // Hide trump type from non-declarers until revealed
+        type: state.trump.isRevealed || isDeclarer ? state.trump.type : null,
         // Hide suit from everyone except declarer until revealed
         // For joker (no trump), suit is always null
         suit:
@@ -1049,10 +1050,6 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       return { newState: state, broadcasts, errors: [{ code: 'PLAYER_NOT_FOUND', message: 'Player not found' }] };
     }
 
-    if (!state.trump.suit) {
-      return { newState: state, broadcasts, errors: [{ code: 'NO_TRUMP', message: 'No trump to reveal (Joker mode)' }] };
-    }
-
     if (state.trump.isRevealed) {
       return { newState: state, broadcasts, errors: [{ code: 'ALREADY_REVEALED', message: 'Trump already revealed' }] };
     }
@@ -1060,7 +1057,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     // Validation already ensures: correct phase, player's turn, no led-suit cards
     state.trump.isRevealed = true;
     state.trump.revealedBy = playerId;
-    state.trump.mustPlayTrump = true;
+    // mustPlayTrump only applies when there's a trump suit (not joker)
+    state.trump.mustPlayTrump = state.trump.type !== 'joker';
 
     broadcasts.push({
       event: 'TRUMP_REVEALED',
@@ -1072,26 +1070,28 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       },
     });
 
-    // Check for marriage
-    const marriageSuit = detectMarriage(player.hand, state.trump.suit);
-    if (marriageSuit) {
-      const declarer = state.players.find((p) => p.isDeclarer)!;
-      const effectiveBid = calculateEffectiveBid(
-        state.bidding.currentBid!,
-        player.team,
-        declarer.team
-      );
+    // Check for marriage (not applicable in joker mode)
+    if (state.trump.suit) {
+      const marriageSuit = detectMarriage(player.hand, state.trump.suit);
+      if (marriageSuit) {
+        const declarer = state.players.find((p) => p.isDeclarer)!;
+        const effectiveBid = calculateEffectiveBid(
+          state.bidding.currentBid!,
+          player.team,
+          declarer.team
+        );
 
-      state.marriage = {
-        team: player.team,
-        suit: marriageSuit,
-        effectiveBid,
-      };
+        state.marriage = {
+          team: player.team,
+          suit: marriageSuit,
+          effectiveBid,
+        };
 
-      broadcasts.push({
-        event: 'MARRIAGE_DECLARED',
-        payload: { playerId, suit: marriageSuit, effectiveBid },
-      });
+        broadcasts.push({
+          event: 'MARRIAGE_DECLARED',
+          payload: { playerId, suit: marriageSuit, effectiveBid },
+        });
+      }
     }
 
     return { newState: state, broadcasts };
@@ -1407,8 +1407,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
   }
 
   private validateTrumpReveal(state: TwentyNineState, playerId: string): { valid: boolean; error?: string } {
-    // Allow reveal for any hidden trump (suit or seventh-card), but not joker
-    if (!state.trump.type || state.trump.type === 'joker') return { valid: false, error: 'No trump to reveal' };
+    // Allow reveal for any hidden trump type
+    if (!state.trump.type) return { valid: false, error: 'No trump to reveal' };
     if (state.trump.isRevealed) return { valid: false, error: 'Trump already revealed' };
     const player = state.players.find((p) => p.id === playerId);
     if (!player) return { valid: false, error: 'Player not found' };
@@ -1421,8 +1421,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     // Player must NOT have any cards of the led suit
     const hasLedSuit = player.hand.some((c) => c.suit === state.leadSuit);
     if (hasLedSuit) return { valid: false, error: 'Must follow suit - cannot reveal' };
-    // Player must have at least one trump card to make reveal meaningful (optional but logical)
-    if (!state.trump.suit) return { valid: false, error: 'No trump suit set' };
+    // For non-joker modes, trump suit must be set
+    if (state.trump.type !== 'joker' && !state.trump.suit) return { valid: false, error: 'No trump suit set' };
     return { valid: true };
   }
 
