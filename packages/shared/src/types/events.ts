@@ -75,7 +75,7 @@ export interface ServerEvents {
     team2Sets: number;
     bidResult: 'success' | 'fail';
   };
-  GAME_FINISHED: { winner: 'team1' | 'team2'; reason: string };
+  GAME_FINISHED: { winner: 'team1' | 'team2' | 'forfeit'; reason: string; forfeitedPlayerId?: string };
 
   // Connection
   PLAYER_DISCONNECTED: { playerId: string; timeout: number };

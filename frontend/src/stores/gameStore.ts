@@ -60,6 +60,13 @@ interface DoubleState {
   multiplier: number;
 }
 
+interface DisconnectState {
+  playerId: string;
+  username: string;
+  expiresAt: number;
+  remainingSeconds: number;
+}
+
 interface GameState {
   phase: string;
   players: PlayerState[];
@@ -75,8 +82,11 @@ interface GameState {
   weakHandPlayer: string | null;
   settings: any;
   lastError: { code: string; message: string; timestamp: number } | null;
+  disconnectedPlayer: DisconnectState | null;
 
   setGameState: (state: any) => void;
+  setDisconnectedPlayer: (player: DisconnectState | null) => void;
+  updateDisconnectedCountdown: () => void;
   clearGame: () => void;
 }
 
@@ -121,6 +131,7 @@ export const useGameStore = create<GameState>((set) => ({
   weakHandPlayer: null,
   settings: null,
   lastError: null,
+  disconnectedPlayer: null,
 
   setGameState: (state: any) => {
     set({
@@ -139,6 +150,15 @@ export const useGameStore = create<GameState>((set) => ({
       settings: state.settings,
     });
   },
+
+  setDisconnectedPlayer: (player) => set({ disconnectedPlayer: player }),
+
+  updateDisconnectedCountdown: () => set((state) => {
+    if (!state.disconnectedPlayer) return state;
+    const remaining = Math.max(0, Math.ceil((state.disconnectedPlayer.expiresAt - Date.now()) / 1000));
+    if (remaining <= 0) return { disconnectedPlayer: null };
+    return { disconnectedPlayer: { ...state.disconnectedPlayer, remainingSeconds: remaining } };
+  }),
 
   clearGame: () => {
     set({
@@ -161,6 +181,7 @@ export const useGameStore = create<GameState>((set) => ({
       score: { teamPoints: [0, 0], matchPoints: [0, 0], sets: [0, 0], lastBidResult: null },
       weakHandPlayer: null,
       settings: null,
+      disconnectedPlayer: null,
     });
   },
 }));

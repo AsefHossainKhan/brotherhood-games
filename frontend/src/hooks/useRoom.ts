@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useSocketStore } from '@/stores/socketStore';
 import { useRoomStore } from '@/stores/roomStore';
 
@@ -10,6 +11,7 @@ export function useRoom() {
   const socket = useSocketStore((s) => s.socket);
   const updateUsername = useSocketStore((s) => s.updateUsername);
   const room = useRoomStore();
+  const router = useRouter();
 
   const createRoom = (gameType: string = 'twenty-nine', settings?: Record<string, unknown>) => {
     const currentUsername = useSocketStore.getState().username;
@@ -24,6 +26,7 @@ export function useRoom() {
   const leaveRoom = () => {
     socket?.emit('LEAVE_ROOM');
     room.clearRoom();
+    router.push('/');
   };
 
   const becomeSpectator = (roomCode: string) => {

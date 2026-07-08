@@ -11,7 +11,7 @@ export default defineConfig({
   fullyParallel: false, // sequential by default; individual tests opt-in
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 1, // 1 retry locally for flaky socket timing
-  workers: 1,
+  workers: 2,
   reporter: [['html', { open: 'never' }], ['list']],
   // Global timeout is generous; individual tests set their own expect timeouts
   timeout: 300_000, // 5 minutes — full game tests can be slow with 4 simulated players

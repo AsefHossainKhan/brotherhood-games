@@ -134,6 +134,18 @@ export class GameRuntime {
     const room = this.rooms.get(conn.roomId);
     if (!room) return null;
 
+    // If game is in progress, treat leaving as forfeit
+    if (room.status === 'playing') {
+      room.status = 'finished';
+      this.emitter.emitToRoom(room.id, 'GAME_FINISHED', {
+        winner: 'forfeit',
+        reason: `Player left the game`,
+        forfeitedPlayerId: userId,
+      });
+      this.cleanupRoom(room.id);
+      return { room, wasHost: false };
+    }
+
     const wasHost = room.isHost(userId);
     room.removePlayer(userId);
     room.removeSpectator(userId);
@@ -149,7 +161,7 @@ export class GameRuntime {
     // If host left, transfer ownership
     if (wasHost && room.players.size > 0) {
       const newHost = Array.from(room.players.values())[0];
-      (room as any).hostId = newHost.userId;
+      room.transferHost(newHost.userId);
     }
 
     return { room, wasHost };
@@ -324,6 +336,12 @@ export class GameRuntime {
     // Update connection
     this.connections.set(userId, { socketId, userId, roomId: reservation.roomId });
 
+    // Mark player as connected on the Room object
+    const player = room.players.get(userId);
+    if (player) {
+      player.isConnected = true;
+    }
+
     // Notify the room
     this.emitter.emitToRoom(room.id, 'PLAYER_RECONNECTED', { playerId: userId });
 
@@ -394,13 +412,18 @@ export class GameRuntime {
     const room = this.rooms.get(reservation.roomId);
     if (!room) return;
 
+    const player = room.players.get(userId);
+    const username = player?.username ?? 'Unknown player';
+
     // Notify room of forfeit
     this.emitter.emitToRoom(room.id, 'GAME_FINISHED', {
       winner: 'forfeit',
-      reason: `Player ${userId} failed to reconnect`,
+      reason: `${username} failed to reconnect`,
+      forfeitedPlayerId: userId,
     });
 
     room.status = 'finished';
+    this.cleanupRoom(room.id);
   }
 
   /** Clean up a room. */

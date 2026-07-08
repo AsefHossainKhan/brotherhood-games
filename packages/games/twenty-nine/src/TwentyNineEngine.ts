@@ -260,20 +260,6 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     return state.players[state.currentTurn]?.id ?? null;
   }
 
-  handleDisconnect(state: TwentyNineState, playerId: string): ActionResult<TwentyNineState> {
-    const newState = this.cloneState(state);
-    const player = newState.players.find((p) => p.id === playerId);
-    if (player) player.isConnected = false;
-    return { newState, broadcasts: [] };
-  }
-
-  handleReconnect(state: TwentyNineState, playerId: string): ActionResult<TwentyNineState> {
-    const newState = this.cloneState(state);
-    const player = newState.players.find((p) => p.id === playerId);
-    if (player) player.isConnected = true;
-    return { newState, broadcasts: [] };
-  }
-
   // ---- Private Handlers ----
 
   private handleStartGame(state: TwentyNineState, broadcasts: Broadcast[]): ActionResult<TwentyNineState> {

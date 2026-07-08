@@ -77,6 +77,11 @@ export function useGame() {
     socket?.emit('KEEP_WEAK_HAND');
   };
 
+  // Game continuation
+  const startNextHand = () => {
+    socket?.emit('START_NEXT_HAND');
+  };
+
   return {
     ...game,
     myPlayer,
@@ -95,5 +100,6 @@ export function useGame() {
     requestTrumpReveal,
     cancelWeakHand,
     keepWeakHand,
+    startNextHand,
   };
 }

@@ -106,15 +106,4 @@ export interface GameEngine<TState = unknown> {
    * Returns null if no specific player should act (e.g., between phases).
    */
   getCurrentPlayer(state: TState): string | null;
-
-  /**
-   * Handle a player disconnection.
-   * The engine decides what happens (e.g., pause, forfeit, AI takeover).
-   */
-  handleDisconnect(state: TState, playerId: string): ActionResult<TState>;
-
-  /**
-   * Handle a player reconnection.
-   */
-  handleReconnect(state: TState, playerId: string): ActionResult<TState>;
 }

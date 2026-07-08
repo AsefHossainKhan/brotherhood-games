@@ -427,8 +427,14 @@ export async function playCurrentTurn(players: PlayerContext[]): Promise<PlayerC
 
   while (Date.now() < deadline) {
     for (const player of players) {
+      // Check for "Your turn" text (with or without emoji)
       const turnText = player.page.locator('text=Your turn');
-      if (await turnText.isVisible().catch(() => false)) {
+      const turnTextWithEmoji = player.page.locator('text=🎯 Your turn');
+      
+      const hasTurn = await turnText.isVisible().catch(() => false) ||
+                      await turnTextWithEmoji.isVisible().catch(() => false);
+      
+      if (hasTurn) {
         // Found the player with the turn — play their first card
         const cards = player.page.locator('[data-testid^="card-"]');
         const count = await cards.count();

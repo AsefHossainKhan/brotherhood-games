@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { useSocketStore } from '@/stores/socketStore';
 import { useRoomStore } from '@/stores/roomStore';
 import { useGameStore } from '@/stores/gameStore';
@@ -15,6 +16,8 @@ export function useSocket() {
   const clearRoom = useRoomStore((s) => s.clearRoom);
   const setGameState = useGameStore((s) => s.setGameState);
   const clearGame = useGameStore((s) => s.clearGame);
+  const setDisconnectedPlayer = useGameStore((s) => s.setDisconnectedPlayer);
+  const router = useRouter();
   const listenersAttached = useRef(false);
 
   useEffect(() => {
@@ -52,6 +55,12 @@ export function useSocket() {
 
     socket.on('GAME_FINISHED', (data) => {
       console.log('Game finished:', data.winner, data.reason);
+      // Forfeit means the room is cleaned up — navigate home
+      if (data.winner === 'forfeit') {
+        clearGame();
+        clearRoom();
+        router.push('/');
+      }
     });
 
     // ---- Granular Game Events (for future animations/sounds) ----
@@ -87,13 +96,37 @@ export function useSocket() {
       console.log('Score:', data.team1Points, '-', data.team2Points, '|', data.bidResult);
     });
 
+    socket.on('NEXT_HAND_STARTED', (data) => {
+      console.log('Next hand started. Dealer:', data.dealerId);
+      // Game state is already updated via GAME_STATE_UPDATED
+    });
+
+    socket.on('MATCH_FINISHED', (data) => {
+      console.log('Match finished:', data.winner, data.reason);
+      // Game state is already updated via GAME_STATE_UPDATED to MATCH_COMPLETE phase
+    });
+
+    socket.on('GAME_CANCELLED', (data) => {
+      console.log('Game cancelled:', data.reason);
+      // Game state is already updated via GAME_STATE_UPDATED to MATCH_COMPLETE phase
+    });
+
     // ---- Connection Events ----
     socket.on('PLAYER_DISCONNECTED', (data) => {
       console.log('Player disconnected:', data.playerId);
+      const state = useGameStore.getState();
+      const player = state.players.find((p) => p.id === data.playerId);
+      setDisconnectedPlayer({
+        playerId: data.playerId,
+        username: player?.username ?? 'Unknown',
+        expiresAt: Date.now() + data.timeout,
+        remainingSeconds: Math.ceil(data.timeout / 1000),
+      });
     });
 
     socket.on('PLAYER_RECONNECTED', (data) => {
       console.log('Player reconnected:', data.playerId);
+      setDisconnectedPlayer(null);
     });
 
     // ---- Error Handling ----
@@ -125,12 +158,15 @@ export function useSocket() {
       socket.off('CARD_PLAYED');
       socket.off('TRICK_COMPLETED');
       socket.off('SCORE_UPDATED');
+      socket.off('NEXT_HAND_STARTED');
+      socket.off('MATCH_FINISHED');
+      socket.off('GAME_CANCELLED');
       socket.off('PLAYER_DISCONNECTED');
       socket.off('PLAYER_RECONNECTED');
       socket.off('ERROR');
       listenersAttached.current = false;
     };
-  }, [socket, setRoom, clearRoom, setGameState, clearGame]);
+  }, [socket, setRoom, clearRoom, setGameState, clearGame, setDisconnectedPlayer, router]);
 
   return { socket };
 }

@@ -12,6 +12,9 @@ import { DoublePanel } from '@/components/games/twenty-nine/DoublePanel';
 import { WeakHandPanel } from '@/components/games/twenty-nine/WeakHandPanel';
 import { GameStatus } from '@/components/games/twenty-nine/GameStatus';
 import { TrumpRevealPanel } from '@/components/games/twenty-nine/TrumpRevealPanel';
+import { ScoringPanel } from '@/components/games/twenty-nine/ScoringPanel';
+import { MatchCompletePanel } from '@/components/games/twenty-nine/MatchCompletePanel';
+import { DisconnectOverlay } from './DisconnectOverlay';
 
 export function GameBoard() {
   const { phase, players, myPlayer, isMyTurn, score, weakHandPlayer } = useGame();
@@ -23,9 +26,12 @@ export function GameBoard() {
   const showBidPanel = phase === 'BIDDING' && isMyTurn;
   const showTrumpSelector = phase === 'TRUMP_SELECTION' && myPlayer?.isDeclarer;
   const showDoublePanel = phase === 'DOUBLE_PHASE';
+  const showScoringPanel = phase === 'SCORING';
+  const showMatchCompletePanel = phase === 'MATCH_COMPLETE';
 
   return (
     <div data-testid="game-board" className="flex min-h-screen flex-col">
+      <DisconnectOverlay />
       {/* Top bar: scores + status */}
       <div className="flex items-center justify-between border-b border-gray-800 px-4 py-2">
         <ScoreBoard />
@@ -53,6 +59,8 @@ export function GameBoard() {
           {showBidPanel && <div data-testid="bid-panel"><BidPanel /></div>}
           {showTrumpSelector && <div data-testid="trump-selector"><TrumpSelector /></div>}
           {showDoublePanel && <div data-testid="double-panel"><DoublePanel /></div>}
+          {showScoringPanel && <ScoringPanel />}
+          {showMatchCompletePanel && <MatchCompletePanel />}
           <TrumpRevealPanel />
         </div>
       </div>

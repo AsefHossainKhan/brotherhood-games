@@ -159,6 +159,11 @@ export class Room {
     return this.hostId === userId;
   }
 
+  /** Transfer host to a new user. */
+  transferHost(newHostId: string): void {
+    (this as { hostId: string }).hostId = newHostId;
+  }
+
   /** Check if a user is in the room (player or spectator). */
   hasUser(userId: string): boolean {
     return this.players.has(userId) || this.spectators.has(userId);

@@ -11,6 +11,7 @@ export default function HomePage() {
   const [joinCode, setJoinCode] = useState('');
   const [username, setUsername] = useState('');
   const [mounted, setMounted] = useState(false);
+  const [spectateMode, setSpectateMode] = useState(false);
   const isConnected = useSocketStore((s) => s.isConnected);
   const roomCode = useRoom().roomCode;
 
@@ -32,7 +33,7 @@ export default function HomePage() {
     }
   }, [roomCode, router]);
 
-  const { createRoom, joinRoom, updateUsername: syncUsername } = useRoom();
+  const { createRoom, joinRoom, becomeSpectator, updateUsername: syncUsername } = useRoom();
 
   const handleCreateRoom = () => {
     if (username) {
@@ -51,7 +52,12 @@ export default function HomePage() {
     if (username) {
       syncUsername(username);
     }
-    joinRoom(joinCode.trim().toUpperCase());
+    const code = joinCode.trim().toUpperCase();
+    if (spectateMode) {
+      becomeSpectator(code);
+    } else {
+      joinRoom(code);
+    }
   };
 
   if (!mounted) {
@@ -130,8 +136,23 @@ export default function HomePage() {
             data-testid="join-room-btn"
             className="rounded-lg bg-green-600 px-6 py-3 font-semibold text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            Join
+            {spectateMode ? 'Watch' : 'Join'}
           </button>
+        </div>
+
+        {/* Spectate toggle */}
+        <div className="flex items-center justify-center gap-2">
+          <input
+            type="checkbox"
+            id="spectate-mode"
+            data-testid="spectate-toggle"
+            checked={spectateMode}
+            onChange={(e) => setSpectateMode(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-green-600 focus:ring-green-500"
+          />
+          <label htmlFor="spectate-mode" className="text-sm text-gray-400">
+            Watch as spectator
+          </label>
         </div>
 
         {/* Game info */}

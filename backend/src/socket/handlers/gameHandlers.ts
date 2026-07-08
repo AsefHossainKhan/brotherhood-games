@@ -89,4 +89,10 @@ export function handleGameEvents(io: Server, socket: Socket, runtime: GameRuntim
   // Weak hand
   socket.on('CANCEL_WEAK_HAND', () => handleAction('CANCEL_WEAK_HAND'));
   socket.on('KEEP_WEAK_HAND', () => handleAction('KEEP_WEAK_HAND'));
+
+  // Bidding - call
+  socket.on('CALL_BID', () => handleAction('CALL_BID'));
+
+  // Game continuation
+  socket.on('START_NEXT_HAND', () => handleAction('START_NEXT_HAND'));
 }

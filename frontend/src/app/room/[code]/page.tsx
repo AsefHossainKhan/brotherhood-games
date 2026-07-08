@@ -49,7 +49,7 @@ export default function RoomPage() {
   }
 
   // Show lobby if waiting, game board if playing
-  const isPlaying = status === 'playing' || phase === 'PLAYING' || phase === 'BIDDING' || phase === 'TRUMP_SELECTION' || phase === 'SECOND_DEAL' || phase === 'DOUBLE_PHASE';
+  const isPlaying = status === 'playing' || ['PLAYING','BIDDING','TRUMP_SELECTION','SECOND_DEAL','DOUBLE_PHASE','SCORING','MATCH_COMPLETE'].includes(phase);
 
   return (
     <div className="min-h-screen">

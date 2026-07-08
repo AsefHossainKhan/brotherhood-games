@@ -1047,8 +1047,9 @@ describe('TwentyNineEngine — Full Game Flow', () => {
         // Verify the seventh card is included in the TRUMP_REVEALED broadcast
         const revealBroadcast = result.broadcasts.find(b => b.event === 'TRUMP_REVEALED');
         expect(revealBroadcast).toBeDefined();
-        expect(revealBroadcast!.payload.seventhCard).toEqual(s.trump.seventhCard);
-        expect(revealBroadcast!.payload.seventhCard.suit).toBe(trumpSuit);
+        const seventhCard = revealBroadcast!.payload.seventhCard as { suit: string };
+        expect(seventhCard).toEqual(s.trump.seventhCard);
+        expect(seventhCard.suit).toBe(trumpSuit);
       }
     });
   });
