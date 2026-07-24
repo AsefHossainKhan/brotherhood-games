@@ -27,11 +27,11 @@ export function ErrorToast() {
 
   return (
     <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-top">
-      <div className="flex items-start gap-3 rounded-lg border border-red-800 bg-red-950 px-4 py-3 shadow-lg">
+      <div className="flex items-start gap-3 rounded-xl border border-red-500/30 bg-black/80 px-4 py-3 shadow-lg backdrop-blur-md">
         <span className="text-red-400">⚠️</span>
         <div className="flex-1">
           <div className="text-sm font-medium text-red-300">{error.code}</div>
-          <div className="mt-1 text-sm text-red-400">{error.message}</div>
+          <div className="mt-1 text-sm text-red-400/80">{error.message}</div>
         </div>
         <button
           onClick={() => setVisible(false)}

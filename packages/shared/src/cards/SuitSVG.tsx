@@ -10,19 +10,19 @@ interface SuitSVGProps {
 const suitColors: Record<Suit, string> = {
   hearts: '#dc2626',
   diamonds: '#dc2626',
-  clubs: '#1a1a2e',
-  spades: '#1a1a2e',
+  clubs: '#1e293b',
+  spades: '#1e293b',
 };
 
 /**
- * Proper playing card suit icons built with SVG primitives.
+ * Classic playing card suit icons - refined for better visual quality.
  * viewBox 0 0 100 100 for consistent scaling.
  */
 function HeartSVG({ fill }: { fill: string }) {
   return (
     <svg viewBox="0 0 100 100" fill={fill}>
       <path
-        d="M50 90 C25 65, 2 50, 2 30 C2 14, 14 2, 30 2 C40 2, 48 8, 50 18 C52 8, 60 2, 70 2 C86 2, 98 14, 98 30 C98 50, 75 65, 50 90Z"
+        d="M50 88 C20 65, 0 48, 0 28 C0 12, 12 0, 28 0 C38 0, 46 6, 50 16 C54 6, 62 0, 72 0 C88 0, 100 12, 100 28 C100 48, 80 65, 50 88Z"
         fillRule="evenodd"
       />
     </svg>
@@ -32,7 +32,7 @@ function HeartSVG({ fill }: { fill: string }) {
 function DiamondSVG({ fill }: { fill: string }) {
   return (
     <svg viewBox="0 0 100 100" fill={fill}>
-      <path d="M50 4 L94 50 L50 96 L6 50 Z" />
+      <path d="M50 2 L98 50 L50 98 L2 50 Z" />
     </svg>
   );
 }
@@ -41,15 +41,15 @@ function ClubSVG({ fill }: { fill: string }) {
   return (
     <svg viewBox="0 0 100 100" fill={fill}>
       {/* Stem */}
-      <rect x="43" y="56" width="14" height="30" rx="2" />
+      <rect x="44" y="58" width="12" height="28" rx="2" />
       {/* Stem base */}
-      <rect x="36" y="82" width="28" height="8" rx="3" />
-      {/* Fill center gap between the three circles */}
-      <circle cx="50" cy="43" r="14" />
-      {/* Three lobes */}
-      <circle cx="50" cy="24" r="20" />
-      <circle cx="28" cy="52" r="20" />
-      <circle cx="72" cy="52" r="20" />
+      <rect x="34" y="82" width="32" height="8" rx="4" />
+      {/* Three lobes - classic club shape */}
+      <circle cx="50" cy="22" r="22" />
+      <circle cx="26" cy="50" r="22" />
+      <circle cx="74" cy="50" r="22" />
+      {/* Fill center */}
+      <circle cx="50" cy="42" r="12" />
     </svg>
   );
 }
@@ -57,10 +57,10 @@ function ClubSVG({ fill }: { fill: string }) {
 function SpadeSVG({ fill }: { fill: string }) {
   return (
     <svg viewBox="0 0 100 100" fill={fill}>
-      {/* Spade body (inverted heart) */}
-      <path d="M50 4 C50 4, 96 50, 96 66 C96 82, 84 92, 70 84 C60 78, 54 68, 54 60 L54 88 L46 88 L46 60 C46 68, 40 78, 30 84 C16 92, 4 82, 4 66 C4 50, 50 4, 50 4Z" />
+      {/* Spade body - classic inverted heart with pointed tip */}
+      <path d="M50 2 C50 2, 100 48, 100 64 C100 82, 86 94, 72 86 C62 80, 56 70, 54 62 L54 92 L46 92 L46 62 C44 70, 38 80, 28 86 C14 94, 0 82, 0 64 C0 48, 50 2, 50 2Z" />
       {/* Stem base */}
-      <rect x="36" y="84" width="28" height="8" rx="3" />
+      <rect x="34" y="88" width="32" height="8" rx="4" />
     </svg>
   );
 }
@@ -75,7 +75,7 @@ export function SuitIcon({ suit, fill }: { suit: Suit; fill: string }) {
       return (
         <g fill={fill}>
           <path
-            d="M50 90 C25 65, 2 50, 2 30 C2 14, 14 2, 30 2 C40 2, 48 8, 50 18 C52 8, 60 2, 70 2 C86 2, 98 14, 98 30 C98 50, 75 65, 50 90Z"
+            d="M50 88 C20 65, 0 48, 0 28 C0 12, 12 0, 28 0 C38 0, 46 6, 50 16 C54 6, 62 0, 72 0 C88 0, 100 12, 100 28 C100 48, 80 65, 50 88Z"
             fillRule="evenodd"
           />
         </g>
@@ -83,25 +83,25 @@ export function SuitIcon({ suit, fill }: { suit: Suit; fill: string }) {
     case 'diamonds':
       return (
         <g fill={fill}>
-          <path d="M50 4 L94 50 L50 96 L6 50 Z" />
+          <path d="M50 2 L98 50 L50 98 L2 50 Z" />
         </g>
       );
     case 'clubs':
       return (
         <g fill={fill}>
-          <rect x="43" y="56" width="14" height="30" rx="2" />
-          <rect x="36" y="82" width="28" height="8" rx="3" />
-          <circle cx="50" cy="43" r="14" />
-          <circle cx="50" cy="24" r="20" />
-          <circle cx="28" cy="52" r="20" />
-          <circle cx="72" cy="52" r="20" />
+          <rect x="44" y="58" width="12" height="28" rx="2" />
+          <rect x="34" y="82" width="32" height="8" rx="4" />
+          <circle cx="50" cy="22" r="22" />
+          <circle cx="26" cy="50" r="22" />
+          <circle cx="74" cy="50" r="22" />
+          <circle cx="50" cy="42" r="12" />
         </g>
       );
     case 'spades':
       return (
         <g fill={fill}>
-          <path d="M50 4 C50 4, 96 50, 96 66 C96 82, 84 92, 70 84 C60 78, 54 68, 54 60 L54 88 L46 88 L46 60 C46 68, 40 78, 30 84 C16 92, 4 82, 4 66 C4 50, 50 4, 50 4Z" />
-          <rect x="36" y="84" width="28" height="8" rx="3" />
+          <path d="M50 2 C50 2, 100 48, 100 64 C100 82, 86 94, 72 86 C62 80, 56 70, 54 62 L54 92 L46 92 L46 62 C44 70, 38 80, 28 86 C14 94, 0 82, 0 64 C0 48, 50 2, 50 2Z" />
+          <rect x="34" y="88" width="32" height="8" rx="4" />
         </g>
       );
   }

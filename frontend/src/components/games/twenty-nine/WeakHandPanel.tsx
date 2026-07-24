@@ -2,14 +2,9 @@
 
 import { useGame } from '@/hooks/useGame';
 
-/**
- * Panel shown when a weak hand is detected (0 points: no J, 9, A, 10).
- * The player can choose to cancel (re-deal) or keep the hand.
- */
 export function WeakHandPanel() {
   const { weakHandPlayer, myPlayer, cancelWeakHand, keepWeakHand } = useGame();
 
-  // Only show for the player with the weak hand
   if (!weakHandPlayer || weakHandPlayer !== myPlayer?.id) {
     return null;
   }
@@ -17,14 +12,13 @@ export function WeakHandPanel() {
   return (
     <div
       data-testid="weak-hand-panel"
-      className="rounded-lg border border-yellow-600 bg-yellow-900/30 p-4"
+      className="rounded-xl border border-yellow-500/30 bg-black/70 p-4 backdrop-blur-md"
     >
       <h3 className="mb-2 text-sm font-medium text-yellow-400">
         ⚠️ Weak Hand Detected
       </h3>
-      <p className="mb-3 text-xs text-gray-400">
-        Your hand has 0 points (no J, 9, A, or 10).
-        You can request a re-deal or keep this hand.
+      <p className="mb-3 text-xs text-white/50">
+        Your hand has 0 points. You can request a re-deal or keep it.
       </p>
       <div className="flex gap-2">
         <button
@@ -37,7 +31,7 @@ export function WeakHandPanel() {
         <button
           onClick={keepWeakHand}
           data-testid="keep-weak-hand-btn"
-          className="flex-1 rounded-lg border border-gray-600 px-4 py-2 text-gray-300 hover:bg-gray-700 transition-colors"
+          className="flex-1 rounded-lg border border-white/20 bg-white/5 px-4 py-2 text-white/70 hover:bg-white/10 transition-colors"
         >
           Keep Hand
         </button>

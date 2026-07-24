@@ -14,46 +14,41 @@ export function BidPanel() {
   const isHighestBidder = bidding.highestBidder === myPlayer?.id;
   const hasNoBidYet = !bidding.highestBidder;
 
-  // Only show action buttons when it's actually this player's turn
   const canBid = isMyTurn && (isChallenger || hasNoBidYet);
   const canCall = isMyTurn && isHighestBidder && bidding.currentBid !== null;
   const canPass = isMyTurn && (isChallenger || isHighestBidder);
 
-  // Update bid value when current bid changes
   if (bidding.currentBid && bidValue <= bidding.currentBid) {
     setBidValue(bidding.currentBid + 1);
   }
 
   return (
-    <div data-testid="bid-panel" className="rounded-lg border border-gray-700 bg-gray-800 p-4">
-      <h3 className="mb-3 text-sm font-medium text-gray-400">Bidding Duel</h3>
+    <div data-testid="bid-panel" className="rounded-xl border border-white/20 bg-black/60 p-4 backdrop-blur-md">
+      <h3 className="mb-3 text-sm font-medium text-white/60">Bidding Duel</h3>
 
-      {/* Current high bid */}
       {bidding.currentBid && (
         <div className="mb-3 text-center">
-          <span className="text-xs text-gray-500">Current bid: </span>
+          <span className="text-xs text-white/40">Current bid: </span>
           <span className="font-bold text-yellow-400">{bidding.currentBid}</span>
         </div>
       )}
 
-      {/* Priority indicator */}
       <div className="mb-3 text-center">
         {hasNoBidYet ? (
-          <span className="text-xs text-gray-500">Open the bidding (min: {minBid})</span>
+          <span className="text-xs text-white/40">Open the bidding (min: {minBid})</span>
         ) : isChallenger && isMyTurn ? (
           <span className="text-xs text-green-400">Your turn to respond</span>
         ) : isChallenger ? (
-          <span className="text-xs text-gray-500">Waiting for your turn...</span>
+          <span className="text-xs text-white/40">Waiting for your turn...</span>
         ) : isHighestBidder && isMyTurn ? (
           <span className="text-xs text-blue-400">Your turn to respond</span>
         ) : isHighestBidder ? (
           <span className="text-xs text-blue-400">You hold the bid</span>
         ) : (
-          <span className="text-xs text-gray-500">Waiting for others...</span>
+          <span className="text-xs text-white/40">Waiting for others...</span>
         )}
       </div>
 
-      {/* Bid slider - only show when can bid */}
       {canBid && (
         <div className="mb-4">
           <input
@@ -62,9 +57,9 @@ export function BidPanel() {
             max={maxBid}
             value={bidValue}
             onChange={(e) => setBidValue(parseInt(e.target.value))}
-            className="w-full"
+            className="w-full accent-yellow-500"
           />
-          <div className="mt-1 flex justify-between text-xs text-gray-500">
+          <div className="mt-1 flex justify-between text-xs text-white/40">
             <span>{minBid}</span>
             <span className="text-lg font-bold text-white">{bidValue}</span>
             <span>{maxBid}</span>
@@ -72,13 +67,12 @@ export function BidPanel() {
         </div>
       )}
 
-      {/* Actions */}
       <div className="flex gap-2">
         <button
           onClick={passBid}
           data-testid="pass-bid-btn"
           disabled={!canPass}
-          className="flex-1 rounded-lg border border-gray-600 px-4 py-2 text-gray-300 hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 rounded-lg border border-white/20 bg-white/5 px-4 py-2 text-white/70 hover:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Pass
         </button>

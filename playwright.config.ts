@@ -28,8 +28,14 @@ export default defineConfig({
 
   projects: [
     {
-      name: 'chromium',
+      name: 'ci',
       use: { ...devices['Desktop Chrome'] },
+      testIgnore: /visual-.*\.spec\.ts/,
+    },
+    {
+      name: 'visual',
+      use: { ...devices['Desktop Chrome'], headless: false },
+      testMatch: /visual-.*\.spec\.ts/,
     },
   ],
 

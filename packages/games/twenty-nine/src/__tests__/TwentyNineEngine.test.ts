@@ -1223,6 +1223,108 @@ describe('TwentyNineEngine — Full Game Flow', () => {
 
       expect(s.marriage).toBeNull();
     });
+
+    it('detects marriage after trump reveal for ALL players', () => {
+      // Setup: seventh-card trump mode, p0 is declarer
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      // Complete bidding
+      const bidderId = PLAYER_IDS[s.currentTurn];
+      s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
+      let safety = 10;
+      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
+        const pid = PLAYER_IDS[s.currentTurn];
+        if (pid === bidderId) break;
+        s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+      }
+
+      const declarer = s.players.find(p => p.isDeclarer)!;
+
+      // Select seventh-card trump
+      s = engine.handleAction(s, action('SELECT_SEVENTH_CARD_TRUMP', declarer.id)).newState;
+
+      // p1 (opponent) will have marriage cards in their hand after reveal
+      // Give p1 K+Q of trump suit (hearts)
+      const trumpSuit = s.trump.suit!;
+      s.players[1].hand = [
+        { suit: trumpSuit, rank: 'K' },
+        { suit: trumpSuit, rank: 'Q' },
+        { suit: 'spades', rank: 'J' },
+        { suit: 'spades', rank: '9' },
+      ];
+
+      // Fast forward to playing phase
+      s = engine.handleAction(s, action('PASS_DOUBLE', s.players.find(p => !p.isDeclarer)!.id)).newState;
+      s = engine.handleAction(s, action('PASS_DOUBLE', s.players.find(p => p.isDeclarer)!.id)).newState;
+      s = engine.handleAction(s, action('PASS_DOUBLE', s.players.find(p => !p.isDeclarer && p.id !== s.players.find(pp => !pp.isDeclarer)!.id)!.id)).newState;
+
+      expect(s.phase).toBe(GAME_PHASES.PLAYING);
+
+      // p1 can't follow suit → trigger reveal
+      // Give p1 cards without the led suit
+      const ledSuit = s.leadSuit || 'diamonds';
+      s.players[1].hand = [
+        { suit: trumpSuit, rank: 'K' },
+        { suit: trumpSuit, rank: 'Q' },
+        { suit: 'spades', rank: 'J' },
+        { suit: 'spades', rank: '9' },
+      ];
+
+      // p1 reveals trump
+      s = engine.handleAction(s, action('REQUEST_TRUMP_REVEAL', s.players[1].id)).newState;
+
+      // Marriage should be detected for p1 (who has K+Q of trump)
+      expect(s.marriage).not.toBeNull();
+      expect(s.marriage!.playerId).toBe('p1');
+      expect(s.marriage!.suit).toBe(trumpSuit);
+      // Calculate expected effective bid based on team relationship
+      const declarerTeam = declarer.team;
+      const marriageTeam = s.players[1].team;
+      const expectedEffectiveBid = declarerTeam === marriageTeam
+        ? Math.max(16, 20 - 4)  // Same team: bid - 4
+        : Math.min(28, 20 + 4); // Different team: bid + 4
+      expect(s.marriage!.effectiveBid).toBe(expectedEffectiveBid);
+    });
+
+    it('detects marriage for first player found when multiple have marriage', () => {
+      // Setup: suit trump mode, both p0 and p1 have marriage
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+
+      // Complete bidding
+      const bidderId = PLAYER_IDS[s.currentTurn];
+      s = engine.handleAction(s, action('PLACE_BID', bidderId, { bid: 20 })).newState;
+      let safety = 10;
+      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
+        const pid = PLAYER_IDS[s.currentTurn];
+        if (pid === bidderId) break;
+        s = engine.handleAction(s, action('PASS_BID', pid)).newState;
+      }
+
+      const declarer = s.players.find(p => p.isDeclarer)!;
+      const trumpSuit = 'hearts';
+
+      // Set up deck so both p0 and p1 get K+Q of hearts
+      s.deck = [
+        { suit: trumpSuit, rank: 'K' }, // → p0
+        { suit: 'spades', rank: 'K' },  // → p1
+        { suit: 'diamonds', rank: 'K' },// → p2
+        { suit: 'clubs', rank: 'K' },   // → p3
+        { suit: trumpSuit, rank: 'Q' }, // → p0
+        { suit: 'spades', rank: 'Q' },  // → p1
+        { suit: 'diamonds', rank: 'Q' },// → p2
+        { suit: 'clubs', rank: 'Q' },   // → p3
+      ];
+
+      // Select suit trump
+      s = engine.handleAction(s, action('SELECT_TRUMP', declarer.id, { suit: trumpSuit })).newState;
+
+      // Marriage should be detected for the first player found (p0)
+      expect(s.marriage).not.toBeNull();
+      expect(s.marriage!.playerId).toBe('p0');
+      expect(s.marriage!.suit).toBe(trumpSuit);
+    });
   });
 
   // ========== WEAK HAND ==========

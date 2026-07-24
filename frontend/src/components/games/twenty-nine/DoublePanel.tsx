@@ -7,25 +7,25 @@ export function DoublePanel() {
 
   if (!isMyTurn) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-800 p-4">
-        <h3 className="mb-3 text-sm font-medium text-gray-400">Double Phase</h3>
+      <div className="rounded-xl border border-white/20 bg-black/60 p-4 backdrop-blur-md">
+        <h3 className="mb-3 text-sm font-medium text-white/60">Double Phase</h3>
         <div className="mb-3 text-center">
-          <span className="text-xs text-gray-500">Current: </span>
+          <span className="text-xs text-white/40">Current: </span>
           <span className="font-bold text-orange-400 capitalize">
             {doubleInfo.level} (×{doubleInfo.multiplier})
           </span>
         </div>
-        <p className="text-center text-sm text-gray-500">Waiting for other players...</p>
+        <p className="text-center text-sm text-white/40">Waiting for other players...</p>
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-gray-700 bg-gray-800 p-4">
-      <h3 className="mb-3 text-sm font-medium text-gray-400">Double Phase</h3>
+    <div className="rounded-xl border border-white/20 bg-black/60 p-4 backdrop-blur-md">
+      <h3 className="mb-3 text-sm font-medium text-white/60">Double Phase</h3>
 
       <div className="mb-3 text-center">
-        <span className="text-xs text-gray-500">Current: </span>
+        <span className="text-xs text-white/40">Current: </span>
         <span className="font-bold text-orange-400 capitalize">
           {doubleInfo.level} (×{doubleInfo.multiplier})
         </span>
@@ -63,7 +63,7 @@ export function DoublePanel() {
         <button
           onClick={passDouble}
           data-testid="pass-double-btn"
-          className="rounded-lg border border-gray-600 px-4 py-2 text-gray-300 hover:bg-gray-700 transition-colors"
+          className="rounded-lg border border-white/20 bg-white/5 px-4 py-2 text-white/70 hover:bg-white/10 transition-colors"
         >
           Pass
         </button>

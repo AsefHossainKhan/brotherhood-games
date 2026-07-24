@@ -757,6 +757,7 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
             team: player.team,
             suit: marriageSuit,
             effectiveBid,
+            playerId: player.id,
           };
           broadcasts.push({
             event: 'MARRIAGE_DECLARED',
@@ -1057,26 +1058,31 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     });
 
     // Check for marriage (not applicable in joker mode)
+    // Check ALL players' hands after reveal (same as suit trump path in proceedToSecondDeal)
     if (state.trump.suit) {
-      const marriageSuit = detectMarriage(player.hand, state.trump.suit);
-      if (marriageSuit) {
-        const declarer = state.players.find((p) => p.isDeclarer)!;
-        const effectiveBid = calculateEffectiveBid(
-          state.bidding.currentBid!,
-          player.team,
-          declarer.team
-        );
+      for (const p of state.players) {
+        const marriageSuit = detectMarriage(p.hand, state.trump.suit);
+        if (marriageSuit) {
+          const declarer = state.players.find((pl) => pl.isDeclarer)!;
+          const effectiveBid = calculateEffectiveBid(
+            state.bidding.currentBid!,
+            p.team,
+            declarer.team
+          );
 
-        state.marriage = {
-          team: player.team,
-          suit: marriageSuit,
-          effectiveBid,
-        };
+          state.marriage = {
+            team: p.team,
+            suit: marriageSuit,
+            effectiveBid,
+            playerId: p.id,
+          };
 
-        broadcasts.push({
-          event: 'MARRIAGE_DECLARED',
-          payload: { playerId, suit: marriageSuit, effectiveBid },
-        });
+          broadcasts.push({
+            event: 'MARRIAGE_DECLARED',
+            payload: { playerId: p.id, suit: marriageSuit, effectiveBid },
+          });
+          break; // Only one marriage can be declared
+        }
       }
     }
 

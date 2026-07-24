@@ -12,40 +12,47 @@ export function TrumpRevealPanel() {
   const trump = useGameStore((s) => s.trump);
   const leadSuit = useGameStore((s) => s.leadSuit);
 
-  const currentPlayer = players[currentTurn];
-  const isMyTurn = currentPlayer?.id === guestId;
-
-  if (phase !== 'PLAYING' || trump.isRevealed || !trump.type || !isMyTurn) {
+  // Only show during playing phase, trump not yet revealed, and trump exists
+  if (phase !== 'PLAYING' || trump.isRevealed || !trump.type) {
     return null;
   }
 
+  // Must have a led suit to reveal
   if (!leadSuit) return null;
 
   const myPlayer = players.find((p) => p.id === guestId);
   if (!myPlayer?.hand || myPlayer.hand.length === 0) return null;
 
+  // Only show if I have NO cards of the led suit
   const hasLedSuit = myPlayer.hand.some((c: any) => c.suit === leadSuit);
   if (hasLedSuit) return null;
 
-  // Check if I have trump cards — if so, I'll be forced to play one after revealing
+  const currentPlayer = players[currentTurn];
+  const isMyTurn = currentPlayer?.id === guestId;
+
   const hasTrumpCards = myPlayer.hand.some((c: any) => c.suit === trump.suit);
 
   return (
-    <div className="flex flex-col items-center gap-2 rounded-lg border border-purple-600 bg-purple-900/30 p-3">
+    <div className="flex flex-col items-center gap-2 rounded-xl border border-purple-500/30 bg-black/70 p-3 backdrop-blur-md">
       <span className="text-sm text-purple-300">
         No {leadSuit} cards in hand
       </span>
       <button
         onClick={() => socket?.emit('REQUEST_TRUMP_REVEAL')}
-        className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-500"
+        disabled={!isMyTurn}
+        className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+          isMyTurn
+            ? 'bg-purple-600 text-white hover:bg-purple-500'
+            : 'bg-gray-700 text-gray-400 cursor-not-allowed'
+        }`}
       >
-        Reveal Trump
+        {isMyTurn ? 'Reveal Trump' : `Waiting for turn...`}
       </button>
-      <span className="text-xs text-gray-500">
+      <span className="text-[10px] text-white/40">
         {trump.type === 'joker'
           ? 'Reveals there is no trump this game'
           : hasTrumpCards
-          ? 'You have trump cards — you must play one after revealing'
+          ? 'You have trump cards — must play one after revealing'
           : 'Trump will be active in trick calculations'}
       </span>
     </div>

@@ -65,6 +65,7 @@ export interface MarriageInfo {
   team: 0 | 1;
   suit: Suit;
   effectiveBid: number;
+  playerId: string; // who declared the marriage
 }
 
 // ---- Score ----

@@ -24,7 +24,7 @@ export function CardComponent({
   className = '',
 }: CardComponentProps) {
   const { suit, rank } = card;
-  const color = isRedSuit(suit) ? '#dc2626' : '#1a1a2e';
+  const color = isRedSuit(suit) ? '#dc2626' : '#1e293b';
 
   return (
     <div
@@ -35,8 +35,10 @@ export function CardComponent({
       style={{
         width,
         height,
-        transition: 'transform 0.15s ease',
-        filter: selected ? 'drop-shadow(0 4px 8px rgba(0,0,0,0.35))' : 'drop-shadow(0 1px 3px rgba(0,0,0,0.15))',
+        transition: 'transform 0.2s ease, filter 0.2s ease',
+        filter: selected
+          ? 'drop-shadow(0 8px 16px rgba(0,0,0,0.5))'
+          : 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))',
       }}
     >
       <svg
@@ -45,54 +47,78 @@ export function CardComponent({
         viewBox="0 0 80 112"
         xmlns="http://www.w3.org/2000/svg"
       >
+        {/* Card shadow */}
+        <rect
+          x="3"
+          y="3"
+          width="76"
+          height="108"
+          rx="8"
+          ry="8"
+          fill="rgba(0,0,0,0.2)"
+        />
+        
         {/* Card body */}
         <rect
           x="1"
           y="1"
           width="78"
           height="110"
-          rx="6"
-          ry="6"
+          rx="8"
+          ry="8"
           fill="white"
-          stroke={selected ? '#3b82f6' : '#e5e7eb'}
-          strokeWidth={selected ? 2 : 1}
+          stroke={selected ? '#3b82f6' : '#d1d5db'}
+          strokeWidth={selected ? 2.5 : 1}
+        />
+
+        {/* Subtle inner border */}
+        <rect
+          x="4"
+          y="4"
+          width="72"
+          height="104"
+          rx="5"
+          ry="5"
+          fill="none"
+          stroke="rgba(0,0,0,0.05)"
+          strokeWidth="0.5"
         />
 
         {/* Top-left rank & suit */}
         <text
-          x="10"
-          y="15"
+          x="11"
+          y="18"
           fill={color}
-          fontSize={rank === '10' ? 12 : 14}
+          fontSize={rank === '10' ? 13 : 15}
           fontWeight="700"
           fontFamily="'Georgia', 'Times New Roman', serif"
           textAnchor="middle"
         >
           {rank}
         </text>
-        <g transform="translate(3, 17) scale(0.14)">
+        <g transform="translate(4, 20) scale(0.14)">
           <SuitIcon suit={suit} fill={color} />
         </g>
 
         {/* Center suit (large) */}
-        <g transform="translate(22, 34) scale(0.36)">
+        <g transform="translate(24, 38) scale(0.38)">
           <SuitIcon suit={suit} fill={color} />
         </g>
 
         {/* Bottom-right rank & suit (rotated 180°) */}
         <g transform="rotate(180, 40, 56)">
           <text
-            x="10"
-            y="15"
+            x="11"
+            y="18"
             fill={color}
-            fontSize={rank === '10' ? 12 : 14}
+            fontSize={rank === '10' ? 13 : 15}
             fontWeight="700"
             fontFamily="'Georgia', 'Times New Roman', serif"
             textAnchor="middle"
           >
             {rank}
           </text>
-          <g transform="translate(3, 17) scale(0.14)">
+          <g transform="translate(4, 20) scale(0.14)">
             <SuitIcon suit={suit} fill={color} />
           </g>
         </g>
