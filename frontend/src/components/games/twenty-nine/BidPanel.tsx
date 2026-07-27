@@ -21,10 +21,7 @@ export function BidPanel() {
   const callValue = (bidding.currentBid ?? 0) + 1;
   const raiseValue = (bidding.currentBid ?? 0) + 2;
   const canRespond =
-    isMyTurn &&
-    !hasNoBidYet &&
-    bidding.currentBid !== null &&
-    !isHighestBidder;
+    isMyTurn && !hasNoBidYet && bidding.currentBid !== null && !isHighestBidder;
   const canCall = canRespond && callValue <= MAX_BID;
   const canRaise = canRespond && raiseValue <= MAX_BID;
   const canPass = isMyTurn && (isChallenger || isHighestBidder);
