@@ -17,6 +17,7 @@ export interface RoomPlayer {
   team: 0 | 1; // 0 = Team A, 1 = Team B
   isConnected: boolean;
   joinedAt: string;
+  isBot?: boolean; // true for AI-controlled players
 }
 
 // A spectator in a room

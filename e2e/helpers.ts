@@ -4,9 +4,9 @@
  * All helpers use Playwright's auto-retrying assertions (expect(...).toBeVisible())
  * instead of raw isVisible() polling, which eliminates flakiness from socket timing.
  */
-import { expect, type Page, type PlayerContext } from './fixtures';
+import { expect, type Page, type PlayerContext } from "./fixtures";
 
-const BASE_URL = 'http://localhost:3000';
+const BASE_URL = "http://localhost:3000";
 
 // ============================================================
 //  Lobby Helpers
@@ -16,21 +16,26 @@ const BASE_URL = 'http://localhost:3000';
 export async function setupPlayer(player: PlayerContext) {
   const { page, username } = player;
   await page.goto(BASE_URL);
-  await expect(page.locator('text=Connected')).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId('username-input').fill(username);
+  await expect(page.locator("text=Connected")).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId("username-input").fill(username);
 }
 
 /** Set a seed in localStorage for deterministic card dealing */
 export async function setTestSeed(page: Page, seed: string) {
-  await page.evaluate((s) => localStorage.setItem('brotherhood_test_seed', s), seed);
+  await page.evaluate(
+    (s) => localStorage.setItem("brotherhood_test_seed", s),
+    seed,
+  );
 }
 
 /** Create a room and return the room code */
 export async function createRoom(player: PlayerContext): Promise<string> {
   const { page } = player;
-  await page.getByTestId('create-room-btn').click();
-  await expect(page.locator('text=Waiting Room')).toBeVisible({ timeout: 10_000 });
-  const roomCode = await page.getByTestId('room-code').textContent();
+  await page.getByTestId("create-room-btn").click();
+  await expect(page.locator("text=Waiting Room")).toBeVisible({
+    timeout: 10_000,
+  });
+  const roomCode = await page.getByTestId("room-code").textContent();
   expect(roomCode).toHaveLength(4);
   return roomCode!;
 }
@@ -38,26 +43,32 @@ export async function createRoom(player: PlayerContext): Promise<string> {
 /** Join an existing room by code */
 export async function joinRoom(player: PlayerContext, roomCode: string) {
   const { page } = player;
-  await page.getByTestId('join-code-input').fill(roomCode);
-  await page.getByTestId('join-room-btn').click();
-  await expect(page.locator('text=Waiting Room')).toBeVisible({ timeout: 10_000 });
+  await page.getByTestId("join-code-input").fill(roomCode);
+  await page.getByTestId("join-room-btn").click();
+  await expect(page.locator("text=Waiting Room")).toBeVisible({
+    timeout: 10_000,
+  });
 }
 
 /** Start the game (host clicks start) */
 export async function startGame(host: PlayerContext) {
-  await expect(host.page.getByTestId('start-game-btn')).toBeEnabled({ timeout: 10_000 });
-  await host.page.getByTestId('start-game-btn').click();
+  await expect(host.page.getByTestId("start-game-btn")).toBeEnabled({
+    timeout: 10_000,
+  });
+  await host.page.getByTestId("start-game-btn").click();
 }
 
 /** Wait for game board to appear on a player's screen */
 export async function waitForGameBoard(player: PlayerContext) {
-  await expect(player.page.getByTestId('game-board')).toBeVisible({ timeout: 20_000 });
+  await expect(player.page.getByTestId("game-board")).toBeVisible({
+    timeout: 20_000,
+  });
 }
 
 /** Full 4-player game setup: create room → join → start → game board visible → handle weak hands */
 export async function setupFullGame(
   players: PlayerContext[],
-  options?: { seed?: string }
+  options?: { seed?: string },
 ): Promise<string> {
   for (const player of players) {
     await setupPlayer(player);
@@ -91,7 +102,7 @@ export async function handleWeakHands(players: PlayerContext[]) {
   while (Date.now() < deadline) {
     let anyWeakHand = false;
     for (const player of players) {
-      const keepBtn = player.page.getByTestId('keep-weak-hand-btn');
+      const keepBtn = player.page.getByTestId("keep-weak-hand-btn");
       if (await keepBtn.isVisible().catch(() => false)) {
         await keepBtn.click();
         anyWeakHand = true;
@@ -111,30 +122,39 @@ export async function handleWeakHands(players: PlayerContext[]) {
 export async function waitForPhase(
   players: PlayerContext[],
   phaseText: string,
-  timeout = 30_000
+  timeout = 30_000,
 ) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     for (const p of players) {
       // Try both getByText and locator approaches
-      const found = await p.page.getByText(phaseText, { exact: false }).first().isVisible().catch(() => false);
+      const found = await p.page
+        .getByText(phaseText, { exact: false })
+        .first()
+        .isVisible()
+        .catch(() => false);
       if (found) return;
     }
     await players[0].page.waitForTimeout(500);
   }
-  throw new Error(`Phase "${phaseText}" not visible on any player within ${timeout}ms`);
+  throw new Error(
+    `Phase "${phaseText}" not visible on any player within ${timeout}ms`,
+  );
 }
 
 /** Find which player currently has a specific testid element visible */
 export async function findPlayerWith(
   players: PlayerContext[],
   testId: string,
-  timeout = 15_000
+  timeout = 15_000,
 ): Promise<PlayerContext | null> {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     for (const player of players) {
-      const visible = await player.page.getByTestId(testId).isVisible().catch(() => false);
+      const visible = await player.page
+        .getByTestId(testId)
+        .isVisible()
+        .catch(() => false);
       if (visible) return player;
     }
     await players[0].page.waitForTimeout(500);
@@ -144,7 +164,7 @@ export async function findPlayerWith(
 
 /** Wait for "Your turn" on a specific player's page */
 export async function waitForMyTurn(page: Page, timeout = 20_000) {
-  await expect(page.locator('text=Your turn')).toBeVisible({ timeout });
+  await expect(page.locator("text=Your turn")).toBeVisible({ timeout });
 }
 
 // ============================================================
@@ -156,20 +176,26 @@ async function waitForBidding(players: PlayerContext[], timeout = 30_000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     for (const player of players) {
-      const keepBtn = player.page.getByTestId('keep-weak-hand-btn');
+      const keepBtn = player.page.getByTestId("keep-weak-hand-btn");
       if (await keepBtn.isVisible().catch(() => false)) {
         await keepBtn.click();
         await player.page.waitForTimeout(800);
       }
     }
     for (const p of players) {
-      if (await p.page.getByText('Bidding', { exact: false }).first().isVisible().catch(() => false)) {
+      if (
+        await p.page
+          .getByText("Bidding", { exact: false })
+          .first()
+          .isVisible()
+          .catch(() => false)
+      ) {
         return;
       }
     }
     await players[0].page.waitForTimeout(500);
   }
-  throw new Error('Bidding phase did not start');
+  throw new Error("Bidding phase did not start");
 }
 
 /**
@@ -178,11 +204,16 @@ async function waitForBidding(players: PlayerContext[], timeout = 30_000) {
  * The GameStatus renders on every page regardless of isMyTurn.
  * The active player sees "🎯 Your turn" while others see "X's turn".
  */
-async function findActiveBidder(players: PlayerContext[]): Promise<PlayerContext | null> {
+async function findActiveBidder(
+  players: PlayerContext[],
+): Promise<PlayerContext | null> {
   let found: PlayerContext | null = null;
   for (const player of players) {
-    const turnText = await player.page.locator('[data-testid="game-status"]').textContent().catch(() => '');
-    const isMyTurn = turnText?.includes('Your turn') ?? false;
+    const turnText = await player.page
+      .locator('[data-testid="game-status"]')
+      .textContent()
+      .catch(() => "");
+    const isMyTurn = turnText?.includes("Your turn") ?? false;
     if (isMyTurn) {
       if (found) return null;
       found = player;
@@ -192,54 +223,65 @@ async function findActiveBidder(players: PlayerContext[]): Promise<PlayerContext
 }
 
 /** Poll until exactly one player has an enabled bidding action */
-export async function waitForActiveBidder(players: PlayerContext[], timeout = 20_000): Promise<PlayerContext> {
+export async function waitForActiveBidder(
+  players: PlayerContext[],
+  timeout = 20_000,
+): Promise<PlayerContext> {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     const bidder = await findActiveBidder(players);
     if (bidder) return bidder;
     await players[0].page.waitForTimeout(300);
   }
-  throw new Error('No active bidder found within timeout');
+  throw new Error("No active bidder found within timeout");
 }
 
 /** Assert exactly one player sees "Your turn" in the game status */
 export async function assertSingleActiveBidder(players: PlayerContext[]) {
   let count = 0;
   for (const player of players) {
-    const turnText = await player.page.locator('[data-testid="game-status"]').textContent().catch(() => '');
-    if (turnText?.includes('Your turn')) count++;
+    const turnText = await player.page
+      .locator('[data-testid="game-status"]')
+      .textContent()
+      .catch(() => "");
+    if (turnText?.includes("Your turn")) count++;
   }
   expect(count).toBe(1);
 }
 
-export type BidAction = { type: 'bid'; value: number } | { type: 'pass' } | { type: 'call' };
+export type BidAction =
+  | { type: "bid"; value: number }
+  | { type: "pass" }
+  | { type: "call" };
 
 /** Execute a single bid action on the given player. Uses click() which auto-waits for actionability. */
-export async function executeBidAction(player: PlayerContext, action: BidAction) {
+export async function executeBidAction(
+  player: PlayerContext,
+  action: BidAction,
+) {
   const page = player.page;
   // Wait a beat for the UI to settle after state propagation
   await page.waitForTimeout(300);
 
-  if (action.type === 'bid') {
-    // Adjust slider to desired value
-    const slider = page.locator('input[type="range"]');
-    if (await slider.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await slider.fill(String(action.value));
-      await page.waitForTimeout(100);
-    }
-    // Click the bid/raise button — Playwright waits for it to be actionable
-    await page.getByTestId('place-bid-btn').click({ timeout: 5_000 });
-  } else if (action.type === 'pass') {
-    await page.getByTestId('pass-bid-btn').click({ timeout: 5_000 });
-  } else if (action.type === 'call') {
-    await page.getByTestId('call-bid-btn').click({ timeout: 5_000 });
+  if (action.type === "bid") {
+    // Opening bid and raises are now fixed-increment buttons (no slider):
+    // opening = "Bid 16", raise = "+2". Click the bid/raise button — Playwright
+    // waits for it to be actionable. The numeric `value` is advisory only.
+    await page.getByTestId("place-bid-btn").click({ timeout: 5_000 });
+  } else if (action.type === "pass") {
+    await page.getByTestId("pass-bid-btn").click({ timeout: 5_000 });
+  } else if (action.type === "call") {
+    await page.getByTestId("call-bid-btn").click({ timeout: 5_000 });
   }
   // Wait for state to propagate to all clients
   await page.waitForTimeout(800);
 }
 
 /** Run a full bidding scenario: array of actions executed sequentially on the active bidder */
-export async function runBiddingScenario(players: PlayerContext[], actions: BidAction[]) {
+export async function runBiddingScenario(
+  players: PlayerContext[],
+  actions: BidAction[],
+) {
   await waitForBidding(players);
   for (const action of actions) {
     const bidder = await waitForActiveBidder(players);
@@ -253,10 +295,10 @@ export async function runBiddingScenario(players: PlayerContext[], actions: BidA
  */
 export async function doQuickBidding(players: PlayerContext[]) {
   await runBiddingScenario(players, [
-    { type: 'bid', value: 16 },
-    { type: 'pass' },
-    { type: 'pass' },
-    { type: 'pass' },
+    { type: "bid", value: 16 },
+    { type: "pass" },
+    { type: "pass" },
+    { type: "pass" },
   ]);
 }
 
@@ -270,24 +312,24 @@ export async function doQuickBidding(players: PlayerContext[]) {
  */
 export async function doQuickTrumpSelection(
   players: PlayerContext[],
-  suit = 'hearts'
+  suit = "hearts",
 ) {
   // Wait for the trump selector to appear on the declarer's screen
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     for (const player of players) {
-      const selector = player.page.getByTestId('trump-selector');
+      const selector = player.page.getByTestId("trump-selector");
       if (await selector.isVisible().catch(() => false)) {
         await player.page.getByTestId(`trump-${suit}`).click();
         // Wait for the phase to change to Double Phase
-        await waitForPhase(players, 'Double Phase', 30_000);
+        await waitForPhase(players, "Double Phase", 30_000);
         return;
       }
     }
     await players[0].page.waitForTimeout(500);
   }
 
-  throw new Error('Trump selector never appeared');
+  throw new Error("Trump selector never appeared");
 }
 
 /**
@@ -297,17 +339,17 @@ export async function selectSeventhCardTrump(players: PlayerContext[]) {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     for (const player of players) {
-      const selector = player.page.getByTestId('trump-selector');
+      const selector = player.page.getByTestId("trump-selector");
       if (await selector.isVisible().catch(() => false)) {
-        await player.page.getByTestId('trump-seventh-card').click();
-        await waitForPhase(players, 'Double Phase', 30_000);
+        await player.page.getByTestId("trump-seventh-card").click();
+        await waitForPhase(players, "Double Phase", 30_000);
         return;
       }
     }
     await players[0].page.waitForTimeout(500);
   }
 
-  throw new Error('Seventh-card trump selector never appeared');
+  throw new Error("Seventh-card trump selector never appeared");
 }
 
 /**
@@ -317,17 +359,17 @@ export async function selectJokerTrump(players: PlayerContext[]) {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
     for (const player of players) {
-      const selector = player.page.getByTestId('trump-selector');
+      const selector = player.page.getByTestId("trump-selector");
       if (await selector.isVisible().catch(() => false)) {
-        await player.page.getByTestId('trump-joker').click();
-        await waitForPhase(players, 'Double Phase', 30_000);
+        await player.page.getByTestId("trump-joker").click();
+        await waitForPhase(players, "Double Phase", 30_000);
         return;
       }
     }
     await players[0].page.waitForTimeout(500);
   }
 
-  throw new Error('Joker trump selector never appeared');
+  throw new Error("Joker trump selector never appeared");
 }
 
 // ============================================================
@@ -338,21 +380,25 @@ export async function selectJokerTrump(players: PlayerContext[]) {
  * Skip the double phase — everyone passes.
  */
 export async function skipDoublePhase(players: PlayerContext[]) {
-  await waitForPhase(players, 'Double Phase', 20_000);
+  await waitForPhase(players, "Double Phase", 20_000);
 
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     // Check if playing phase reached
     for (const p of players) {
       try {
-        await expect(p.page.locator('text=Playing')).toBeVisible({ timeout: 500 });
+        await expect(p.page.locator("text=Playing")).toBeVisible({
+          timeout: 500,
+        });
         return;
-      } catch { /* not yet */ }
+      } catch {
+        /* not yet */
+      }
     }
 
     // Pass for whoever has the pass button
     for (const player of players) {
-      const passBtn = player.page.getByTestId('pass-double-btn');
+      const passBtn = player.page.getByTestId("pass-double-btn");
       if (await passBtn.isVisible().catch(() => false)) {
         await passBtn.click();
         await player.page.waitForTimeout(600);
@@ -367,7 +413,7 @@ export async function skipDoublePhase(players: PlayerContext[]) {
  * Declare double (opponent doubles), then pass the rest.
  */
 export async function doDoubleThenPass(players: PlayerContext[]) {
-  await waitForPhase(players, 'Double Phase', 20_000);
+  await waitForPhase(players, "Double Phase", 20_000);
 
   let doubled = false;
 
@@ -376,15 +422,19 @@ export async function doDoubleThenPass(players: PlayerContext[]) {
     // Check if playing phase reached
     for (const p of players) {
       try {
-        await expect(p.page.locator('text=Playing')).toBeVisible({ timeout: 500 });
+        await expect(p.page.locator("text=Playing")).toBeVisible({
+          timeout: 500,
+        });
         return;
-      } catch { /* not yet */ }
+      } catch {
+        /* not yet */
+      }
     }
 
     for (const player of players) {
       // Try to double first
       if (!doubled) {
-        const doubleBtn = player.page.getByTestId('double-btn');
+        const doubleBtn = player.page.getByTestId("double-btn");
         if (await doubleBtn.isVisible().catch(() => false)) {
           await doubleBtn.click();
           doubled = true;
@@ -394,7 +444,7 @@ export async function doDoubleThenPass(players: PlayerContext[]) {
       }
 
       // Pass
-      const passBtn = player.page.getByTestId('pass-double-btn');
+      const passBtn = player.page.getByTestId("pass-double-btn");
       if (await passBtn.isVisible().catch(() => false)) {
         await passBtn.click();
         await player.page.waitForTimeout(600);
@@ -413,7 +463,7 @@ export async function doDoubleThenPass(players: PlayerContext[]) {
  * Wait for playing phase to start.
  */
 export async function waitForPlayingPhase(players: PlayerContext[]) {
-  await waitForPhase(players, 'Playing', 30_000);
+  await waitForPhase(players, "Playing", 30_000);
 }
 
 /**
@@ -421,19 +471,22 @@ export async function waitForPlayingPhase(players: PlayerContext[]) {
  * Uses "Your turn" text to find the active player.
  * Returns the player who played.
  */
-export async function playCurrentTurn(players: PlayerContext[]): Promise<PlayerContext> {
+export async function playCurrentTurn(
+  players: PlayerContext[],
+): Promise<PlayerContext> {
   const timeout = 20_000;
   const deadline = Date.now() + timeout;
 
   while (Date.now() < deadline) {
     for (const player of players) {
       // Check for "Your turn" text (with or without emoji)
-      const turnText = player.page.locator('text=Your turn');
-      const turnTextWithEmoji = player.page.locator('text=🎯 Your turn');
-      
-      const hasTurn = await turnText.isVisible().catch(() => false) ||
-                      await turnTextWithEmoji.isVisible().catch(() => false);
-      
+      const turnText = player.page.locator("text=Your turn");
+      const turnTextWithEmoji = player.page.locator("text=🎯 Your turn");
+
+      const hasTurn =
+        (await turnText.isVisible().catch(() => false)) ||
+        (await turnTextWithEmoji.isVisible().catch(() => false));
+
       if (hasTurn) {
         // Found the player with the turn — play their first card
         const cards = player.page.locator('[data-testid^="card-"]');
@@ -479,7 +532,10 @@ export async function playAllTricks(players: PlayerContext[]) {
 /**
  * Quick advance through bidding → trump → double → playing.
  */
-export async function advanceToPlaying(players: PlayerContext[], trumpSuit = 'hearts') {
+export async function advanceToPlaying(
+  players: PlayerContext[],
+  trumpSuit = "hearts",
+) {
   await doQuickBidding(players);
   await doQuickTrumpSelection(players, trumpSuit);
   await skipDoublePhase(players);
@@ -494,16 +550,25 @@ export async function advanceToPlaying(players: PlayerContext[], trumpSuit = 'he
  * Wait for the game to finish (MATCH_COMPLETE).
  * This can take a while with 4 simulated players playing 8 tricks.
  */
-export async function waitForGameEnd(players: PlayerContext[], timeout = 300_000) {
+export async function waitForGameEnd(
+  players: PlayerContext[],
+  timeout = 300_000,
+) {
   // Wait for all tricks to be done — the phase label changes to "Match Complete"
-  await waitForPhase(players, 'Match Complete', timeout);
+  await waitForPhase(players, "Match Complete", timeout);
 }
 
 /**
  * Read the current scoreboard for a player.
  */
 export async function getScoreboard(page: Page) {
-  const teamA = await page.locator('text=Team A').isVisible().catch(() => false);
-  const teamB = await page.locator('text=Team B').isVisible().catch(() => false);
+  const teamA = await page
+    .locator("text=Team A")
+    .isVisible()
+    .catch(() => false);
+  const teamB = await page
+    .locator("text=Team B")
+    .isVisible()
+    .catch(() => false);
   return { teamA, teamB };
 }

@@ -10,6 +10,7 @@ interface RoomPlayer {
   team: 0 | 1;
   isConnected: boolean;
   joinedAt: string;
+  isBot?: boolean;
 }
 
 interface Spectator {

@@ -1,8 +1,13 @@
-import type { GameType, RoomSettings } from '@brotherhood/shared';
-import { RECONNECT_TIMEOUT_MS } from '@brotherhood/shared';
-import { GameEngine, GameAction, ActionResult, VisibilityRole } from './GameEngine';
-import { GameRegistry } from './GameRegistry';
-import { Room } from './Room';
+import type { GameType, RoomSettings } from "@brotherhood/shared";
+import { RECONNECT_TIMEOUT_MS } from "@brotherhood/shared";
+import {
+  GameEngine,
+  GameAction,
+  ActionResult,
+  VisibilityRole,
+} from "./GameEngine";
+import { GameRegistry } from "./GameRegistry";
+import { Room } from "./Room";
 
 /** Callback interface for the runtime to emit events to clients. */
 export interface RuntimeEmitter {
@@ -11,7 +16,12 @@ export interface RuntimeEmitter {
   /** Emit to all sockets in a room */
   emitToRoom(roomId: string, event: string, payload: unknown): void;
   /** Emit to all sockets in a room except one */
-  emitToRoomExcept(roomId: string, excludeSocketId: string, event: string, payload: unknown): void;
+  emitToRoomExcept(
+    roomId: string,
+    excludeSocketId: string,
+    event: string,
+    payload: unknown,
+  ): void;
   /** Emit to specific sockets in a room */
   emitToSockets(socketIds: string[], event: string, payload: unknown): void;
 }
@@ -30,6 +40,20 @@ interface DisconnectionReservation {
   expiresAt: number;
   timeout: NodeJS.Timeout;
 }
+
+/** Delay between consecutive bot actions, for a natural pace of play. */
+const BOT_ACTION_DELAY_MS = 1000;
+
+/**
+ * Longer pause applied after a "review" moment (a completed trick or a settled
+ * auction) so players can actually see what happened before play advances.
+ * Kept in sync with the client's on-screen hold durations: the completed trick
+ * stays visible for ~2s, then the cards animate off to the winner.
+ */
+const REVIEW_DELAY_MS = 3100;
+
+/** Events after which play should pause briefly for the players to review. */
+const REVIEW_EVENTS = new Set(["TRICK_COMPLETED", "BIDDING_FINISHED"]);
 
 /**
  * Game-agnostic runtime.
@@ -59,7 +83,7 @@ export class GameRuntime {
     hostId: string,
     hostUsername: string,
     socketId: string,
-    settings?: Partial<RoomSettings>
+    settings?: Partial<RoomSettings>,
   ): Room {
     const engine = GameRegistry.getOrThrow(gameType);
 
@@ -78,15 +102,15 @@ export class GameRuntime {
     roomCode: string,
     userId: string,
     username: string,
-    socketId: string
+    socketId: string,
   ): { room: Room; seat: number } {
     const roomId = this.roomsByCode.get(roomCode.toUpperCase());
-    if (!roomId) throw new Error('Room not found');
+    if (!roomId) throw new Error("Room not found");
 
     const room = this.rooms.get(roomId);
-    if (!room) throw new Error('Room not found');
+    if (!room) throw new Error("Room not found");
 
-    if (room.status !== 'waiting') throw new Error('Game already in progress');
+    if (room.status !== "waiting") throw new Error("Game already in progress");
 
     // Check if this user was disconnected and has a reservation
     const reservation = this.reservations.get(userId);
@@ -97,7 +121,7 @@ export class GameRuntime {
       return this.reconnectToRoom(room, userId, socketId);
     }
 
-    if (room.hasUser(userId)) throw new Error('Already in room');
+    if (room.hasUser(userId)) throw new Error("Already in room");
 
     const player = room.addPlayer(userId, username);
     this.connections.set(userId, { socketId, userId, roomId: roomId });
@@ -110,15 +134,15 @@ export class GameRuntime {
     roomCode: string,
     userId: string,
     username: string,
-    socketId: string
+    socketId: string,
   ): Room {
     const roomId = this.roomsByCode.get(roomCode.toUpperCase());
-    if (!roomId) throw new Error('Room not found');
+    if (!roomId) throw new Error("Room not found");
 
     const room = this.rooms.get(roomId);
-    if (!room) throw new Error('Room not found');
+    if (!room) throw new Error("Room not found");
 
-    if (room.hasUser(userId)) throw new Error('Already in room');
+    if (room.hasUser(userId)) throw new Error("Already in room");
 
     room.addSpectator(userId, username);
     this.connections.set(userId, { socketId, userId, roomId: roomId });
@@ -135,10 +159,10 @@ export class GameRuntime {
     if (!room) return null;
 
     // If game is in progress, treat leaving as forfeit
-    if (room.status === 'playing') {
-      room.status = 'finished';
-      this.emitter.emitToRoom(room.id, 'GAME_FINISHED', {
-        winner: 'forfeit',
+    if (room.status === "playing") {
+      room.status = "finished";
+      this.emitter.emitToRoom(room.id, "GAME_FINISHED", {
+        winner: "forfeit",
         reason: `Player left the game`,
         forfeitedPlayerId: userId,
       });
@@ -152,19 +176,58 @@ export class GameRuntime {
     this.connections.delete(userId);
     this.reservations.delete(userId);
 
-    // If room is empty, clean it up
-    if (room.players.size === 0 && room.spectators.size === 0) {
+    // Count remaining human (non-bot) players
+    const humanPlayers = Array.from(room.players.values()).filter(
+      (p) => !room.isBot(p.userId),
+    );
+
+    // If no humans remain (empty, or only bots left), clean up the room
+    if (humanPlayers.length === 0 && room.spectators.size === 0) {
       this.cleanupRoom(room.id);
       return { room, wasHost };
     }
 
-    // If host left, transfer ownership
-    if (wasHost && room.players.size > 0) {
-      const newHost = Array.from(room.players.values())[0];
-      room.transferHost(newHost.userId);
+    // If host left, transfer ownership to another human (never a bot)
+    if (wasHost && humanPlayers.length > 0) {
+      room.transferHost(humanPlayers[0].userId);
     }
 
     return { room, wasHost };
+  }
+
+  /** Add an AI bot to a waiting room. Only the host may do this. */
+  addBot(roomId: string, requesterId: string): { room: Room; botId: string } {
+    const room = this.rooms.get(roomId);
+    if (!room) throw new Error("Room not found");
+    if (!room.isHost(requesterId))
+      throw new Error("Only the host can add bots");
+    if (room.status !== "waiting")
+      throw new Error("Cannot add bots after the game starts");
+    if (room.isFull()) throw new Error("Room is full");
+
+    const botId = `bot-${crypto.randomUUID()}`;
+    const botNumber = room.botIds.size + 1;
+    room.addBot(botId, `Bot ${botNumber}`);
+
+    return { room, botId };
+  }
+
+  /** Remove an AI bot from a waiting room. Only the host may do this. */
+  removeBot(
+    roomId: string,
+    requesterId: string,
+    botId: string,
+  ): { room: Room } {
+    const room = this.rooms.get(roomId);
+    if (!room) throw new Error("Room not found");
+    if (!room.isHost(requesterId))
+      throw new Error("Only the host can remove bots");
+    if (room.status !== "waiting")
+      throw new Error("Cannot remove bots after the game starts");
+    if (!room.isBot(botId)) throw new Error("That player is not a bot");
+
+    room.removePlayer(botId);
+    return { room };
   }
 
   // ---- Game Flow ----
@@ -172,11 +235,12 @@ export class GameRuntime {
   /** Start a game in a room. */
   startGame(roomId: string, hostId: string): { room: Room } {
     const room = this.rooms.get(roomId);
-    if (!room) throw new Error('Room not found');
+    if (!room) throw new Error("Room not found");
 
-    if (!room.isHost(hostId)) throw new Error('Only the host can start the game');
-    if (room.status !== 'waiting') throw new Error('Game already started');
-    if (!room.isFull()) throw new Error('Need 4 players to start');
+    if (!room.isHost(hostId))
+      throw new Error("Only the host can start the game");
+    if (room.status !== "waiting") throw new Error("Game already started");
+    if (!room.isFull()) throw new Error("Need 4 players to start");
 
     const engine = GameRegistry.getOrThrow(room.gameType);
     const playerIds = room.getPlayerIdsInSeatOrder();
@@ -194,19 +258,27 @@ export class GameRuntime {
     });
 
     // Create initial state
-    room.gameState = engine.createInitialState(playerIds, room.settings, teams, usernames);
-    room.status = 'playing';
+    room.gameState = engine.createInitialState(
+      playerIds,
+      room.settings,
+      teams,
+      usernames,
+    );
+    room.status = "playing";
     room.matchId = crypto.randomUUID();
 
     // Execute START_GAME action (deals cards, transitions to FIRST_DEAL)
     const startAction: GameAction = {
-      type: 'START_GAME',
+      type: "START_GAME",
       playerId: hostId,
       payload: {},
     };
     const result = engine.handleAction(room.gameState, startAction);
     room.gameState = result.newState;
     this.processBroadcasts(room.id, result);
+
+    // Let any bots act on the opening phase (e.g. weak-hand / bidding).
+    this.driveBots(room);
 
     return { room };
   }
@@ -215,15 +287,15 @@ export class GameRuntime {
   handleGameAction(
     userId: string,
     actionType: string,
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
   ): { room: Room; result: ActionResult<unknown> } {
     const conn = this.connections.get(userId);
-    if (!conn) throw new Error('Not connected to any room');
+    if (!conn) throw new Error("Not connected to any room");
 
     const room = this.rooms.get(conn.roomId);
-    if (!room) throw new Error('Room not found');
-    if (room.status !== 'playing') throw new Error('Game not in progress');
-    if (!room.gameState) throw new Error('No game state');
+    if (!room) throw new Error("Room not found");
+    if (room.status !== "playing") throw new Error("Game not in progress");
+    if (!room.gameState) throw new Error("No game state");
 
     const engine = GameRegistry.getOrThrow(room.gameType);
 
@@ -236,7 +308,7 @@ export class GameRuntime {
     // Validate first
     const validation = engine.validateAction(room.gameState, action);
     if (!validation.valid) {
-      throw new Error(validation.error ?? 'Invalid action');
+      throw new Error(validation.error ?? "Invalid action");
     }
 
     // Execute
@@ -248,7 +320,14 @@ export class GameRuntime {
 
     // Check if game is complete
     if (engine.isComplete(result.newState)) {
-      room.status = 'finished';
+      room.status = "finished";
+    } else {
+      // Advance any bots whose turn is now pending. If this action ended a
+      // trick or the auction, give players a moment to see it first.
+      const initialDelay = this.resultNeedsReview(result)
+        ? REVIEW_DELAY_MS
+        : BOT_ACTION_DELAY_MS;
+      this.driveBots(room, initialDelay);
     }
 
     return { room, result };
@@ -268,7 +347,9 @@ export class GameRuntime {
     if (!room || !room.gameState) return null;
 
     const engine = GameRegistry.getOrThrow(room.gameType);
-    const role: VisibilityRole = room.players.has(userId) ? 'player' : 'spectator';
+    const role: VisibilityRole = room.players.has(userId)
+      ? "player"
+      : "spectator";
 
     return engine.getVisibleState(room.gameState, userId, role);
   }
@@ -276,7 +357,9 @@ export class GameRuntime {
   // ---- Connection Management ----
 
   /** Handle a player disconnecting. */
-  handleDisconnect(socketId: string): { userId: string; roomId: string } | null {
+  handleDisconnect(
+    socketId: string,
+  ): { userId: string; roomId: string } | null {
     // Find the connection by socketId
     let disconnectedUserId: string | null = null;
     for (const [userId, conn] of this.connections.entries()) {
@@ -293,7 +376,7 @@ export class GameRuntime {
     if (!room) return null;
 
     // If game is in progress, create a reservation
-    if (room.status === 'playing') {
+    if (room.status === "playing") {
       const reservation: DisconnectionReservation = {
         userId: disconnectedUserId,
         roomId: conn.roomId,
@@ -305,7 +388,7 @@ export class GameRuntime {
       this.reservations.set(disconnectedUserId, reservation);
 
       // Notify the room
-      this.emitter.emitToRoom(room.id, 'PLAYER_DISCONNECTED', {
+      this.emitter.emitToRoom(room.id, "PLAYER_DISCONNECTED", {
         playerId: disconnectedUserId,
         timeout: RECONNECT_TIMEOUT_MS,
       });
@@ -314,7 +397,7 @@ export class GameRuntime {
       room.removePlayer(disconnectedUserId);
       this.connections.delete(disconnectedUserId);
 
-      this.emitter.emitToRoom(room.id, 'PLAYER_LEFT', {
+      this.emitter.emitToRoom(room.id, "PLAYER_LEFT", {
         playerId: disconnectedUserId,
       });
     }
@@ -334,7 +417,11 @@ export class GameRuntime {
     this.reservations.delete(userId);
 
     // Update connection
-    this.connections.set(userId, { socketId, userId, roomId: reservation.roomId });
+    this.connections.set(userId, {
+      socketId,
+      userId,
+      roomId: reservation.roomId,
+    });
 
     // Mark player as connected on the Room object
     const player = room.players.get(userId);
@@ -343,7 +430,9 @@ export class GameRuntime {
     }
 
     // Notify the room
-    this.emitter.emitToRoom(room.id, 'PLAYER_RECONNECTED', { playerId: userId });
+    this.emitter.emitToRoom(room.id, "PLAYER_RECONNECTED", {
+      playerId: userId,
+    });
 
     return room;
   }
@@ -367,22 +456,103 @@ export class GameRuntime {
     return conn ? this.rooms.get(conn.roomId) : undefined;
   }
 
+  /**
+   * Drive AI bots: repeatedly apply pending bot actions until it is a human's
+   * turn (or the game ends). Runs asynchronously with a small delay between
+   * actions so play feels natural, and re-broadcasts state after each move.
+   */
+  private driveBots(
+    room: Room,
+    initialDelay: number = BOT_ACTION_DELAY_MS,
+  ): void {
+    const engine = GameRegistry.getOrThrow(room.gameType);
+    if (!engine.getBotAction || room.botIds.size === 0) return;
+
+    const step = (iterations: number): void => {
+      if (iterations > 60) return; // safety cap against unexpected loops
+      if (room.status !== "playing" || !room.gameState) return;
+
+      const botAction = engine.getBotAction!(
+        room.gameState,
+        Array.from(room.botIds),
+      );
+      if (!botAction) return; // nothing pending — a human must act
+
+      // Guard: never crash the room on an unexpected illegal bot action.
+      const validation = engine.validateAction(room.gameState, botAction);
+      if (!validation.valid) return;
+
+      const result = engine.handleAction(room.gameState, botAction);
+      room.gameState = result.newState;
+      this.processBroadcasts(room.id, result);
+      this.broadcastVisibleState(room);
+
+      if (engine.isComplete(result.newState)) {
+        room.status = "finished";
+        return;
+      }
+
+      // Pause longer after a trick / auction concludes so it can be reviewed.
+      const nextDelay = this.resultNeedsReview(result)
+        ? REVIEW_DELAY_MS
+        : BOT_ACTION_DELAY_MS;
+      setTimeout(() => step(iterations + 1), nextDelay);
+    };
+
+    setTimeout(() => step(0), initialDelay);
+  }
+
+  /** Whether an action result should trigger a review pause before advancing. */
+  private resultNeedsReview(result: ActionResult<unknown>): boolean {
+    return result.broadcasts.some((b) => REVIEW_EVENTS.has(b.event));
+  }
+
+  /** Send each connected player/spectator their personalized visible state. */
+  private broadcastVisibleState(room: Room): void {
+    for (const player of room.players.values()) {
+      const socketId = this.connections.get(player.userId)?.socketId;
+      if (!socketId) continue; // bots have no socket
+      const visible = this.getVisibleState(player.userId);
+      if (visible)
+        this.emitter.emitToSocket(socketId, "GAME_STATE_UPDATED", visible);
+    }
+    for (const spectator of room.spectators.values()) {
+      const socketId = this.connections.get(spectator.userId)?.socketId;
+      if (!socketId) continue;
+      const visible = this.getVisibleState(spectator.userId);
+      if (visible)
+        this.emitter.emitToSocket(socketId, "GAME_STATE_UPDATED", visible);
+    }
+  }
+
   /** Process broadcasts from an action result. */
-  private processBroadcasts(roomId: string, result: ActionResult<unknown>): void {
+  private processBroadcasts(
+    roomId: string,
+    result: ActionResult<unknown>,
+  ): void {
     for (const broadcast of result.broadcasts) {
       if (broadcast.targetPlayerIds) {
         // Send to specific players
         const socketIds = broadcast.targetPlayerIds
           .map((pid) => this.connections.get(pid)?.socketId)
           .filter((s): s is string => !!s);
-        this.emitter.emitToSockets(socketIds, broadcast.event, broadcast.payload);
+        this.emitter.emitToSockets(
+          socketIds,
+          broadcast.event,
+          broadcast.payload,
+        );
       } else if (broadcast.excludePlayerIds) {
         // Send to all except specific players
         const excludeSocketIds = broadcast.excludePlayerIds
           .map((pid) => this.connections.get(pid)?.socketId)
           .filter((s): s is string => !!s);
         for (const socketId of excludeSocketIds) {
-          this.emitter.emitToRoomExcept(roomId, socketId, broadcast.event, broadcast.payload);
+          this.emitter.emitToRoomExcept(
+            roomId,
+            socketId,
+            broadcast.event,
+            broadcast.payload,
+          );
         }
       } else {
         // Broadcast to whole room
@@ -392,9 +562,13 @@ export class GameRuntime {
   }
 
   /** Reconnect a user to their existing seat. */
-  private reconnectToRoom(room: Room, userId: string, socketId: string): { room: Room; seat: number } {
+  private reconnectToRoom(
+    room: Room,
+    userId: string,
+    socketId: string,
+  ): { room: Room; seat: number } {
     const player = room.players.get(userId);
-    if (!player) throw new Error('Player not found in room');
+    if (!player) throw new Error("Player not found in room");
 
     player.isConnected = true;
     this.connections.set(userId, { socketId, userId, roomId: room.id });
@@ -413,16 +587,16 @@ export class GameRuntime {
     if (!room) return;
 
     const player = room.players.get(userId);
-    const username = player?.username ?? 'Unknown player';
+    const username = player?.username ?? "Unknown player";
 
     // Notify room of forfeit
-    this.emitter.emitToRoom(room.id, 'GAME_FINISHED', {
-      winner: 'forfeit',
+    this.emitter.emitToRoom(room.id, "GAME_FINISHED", {
+      winner: "forfeit",
       reason: `${username} failed to reconnect`,
       forfeitedPlayerId: userId,
     });
 
-    room.status = 'finished';
+    room.status = "finished";
     this.cleanupRoom(room.id);
   }
 

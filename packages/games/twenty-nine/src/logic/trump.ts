@@ -1,5 +1,5 @@
-import type { Card, Suit } from '@brotherhood/shared';
-import { RANK_ORDER_29 } from '@brotherhood/shared';
+import type { Card, Suit } from "@brotherhood/shared";
+import { RANK_ORDER_29 } from "@brotherhood/shared";
 
 /**
  * Select the trump suit normally.
@@ -19,7 +19,7 @@ export function selectSeventhCardTrump(hand: Card[]): {
   seventhCard: Card;
 } {
   if (hand.length < 7) {
-    throw new Error('Hand must have at least 7 cards for seventh-card trump');
+    throw new Error("Hand must have at least 7 cards for seventh-card trump");
   }
 
   const seventhCard = hand[6]; // 0-indexed, so index 6 = 7th card
@@ -45,7 +45,7 @@ export function selectJoker(): { suit: null; isHidden: boolean } {
  */
 export function revealTrump(
   revealerHand: Card[],
-  trumpSuit: Suit
+  trumpSuit: Suit,
 ): {
   revealed: boolean;
   mustPlaySuit: boolean;
@@ -68,13 +68,19 @@ export function canRevealTrump(hand: Card[], trumpSuit: Suit | null): boolean {
 
 /**
  * Check if the game should be cancelled because hidden trump was never revealed.
- * If all 8 tricks are played without revealing, the game is cancelled.
+ *
+ * For seventh-card trump the declarer sets the card aside and plays with 7
+ * cards; if the trump is never revealed the card never enters play, so the
+ * game is cancelled. For any other trump mode, the game is cancelled only if
+ * all tricks were played without a reveal.
  */
 export function shouldCancelForHiddenTrump(
   trumpType: string,
   trumpRevealed: boolean,
   tricksPlayed: number,
-  totalTricks: number
+  totalTricks: number,
 ): boolean {
-  return !trumpRevealed && tricksPlayed >= totalTricks;
+  if (trumpRevealed) return false;
+  if (trumpType === "seventh-card") return true;
+  return tricksPlayed >= totalTricks;
 }

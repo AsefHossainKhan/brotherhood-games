@@ -1,9 +1,10 @@
-'use client';
+"use client";
 
-import { useRoom } from '@/hooks/useRoom';
-import { useSocket } from '@/hooks/useSocket';
-import { useSocketStore } from '@/stores/socketStore';
-import { motion } from 'framer-motion';
+import { useRoom } from "@/hooks/useRoom";
+import { useSocket } from "@/hooks/useSocket";
+import { useSocketStore } from "@/stores/socketStore";
+import { Button } from "@/components/common/Button";
+import { motion } from "framer-motion";
 
 export function Lobby() {
   const {
@@ -16,9 +17,12 @@ export function Lobby() {
     leaveRoom,
     changeTeam,
     changeSeat,
+    addBot,
+    removeBot,
   } = useRoom();
 
   const guestId = useSocketStore((s) => s.guestId);
+  const allowBots = useSocketStore((s) => s.allowBots);
 
   useSocket();
 
@@ -38,21 +42,31 @@ export function Lobby() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4" style={{background:"radial-gradient(ellipse at 50% 50%,#2d5a27 0%,#1e4a1a 40%,#153812 70%,#0d2a0a 100%)"}}>
+    <div
+      className="flex min-h-screen items-center justify-center p-4"
+      style={{
+        background:
+          "radial-gradient(ellipse at 50% 50%,#2d5a27 0%,#1e4a1a 40%,#153812 70%,#0d2a0a 100%)",
+      }}
+    >
       <div className="w-full max-w-2xl space-y-6">
         {/* Room header */}
         <div className="text-center">
           <h2 className="text-2xl font-bold text-white">Waiting Room</h2>
           <div className="mt-3 flex items-center justify-center gap-3">
-            <span data-testid="room-code" className="rounded-xl border border-white/20 bg-black/40 px-5 py-2.5 font-mono text-2xl font-bold tracking-widest text-green-400 backdrop-blur-sm">
+            <span
+              data-testid="room-code"
+              className="rounded-xl border border-white/20 bg-black/40 px-5 py-2.5 font-mono text-2xl font-bold tracking-widest text-green-400 backdrop-blur-sm"
+            >
               {roomCode}
             </span>
-            <button
-              onClick={() => navigator.clipboard.writeText(roomCode ?? '')}
-              className="rounded-lg border border-white/20 px-3 py-2 text-sm text-white/60 hover:bg-black/30 transition-colors"
+            <Button
+              onClick={() => navigator.clipboard.writeText(roomCode ?? "")}
+              variant="outline"
+              size="sm"
             >
               Copy
-            </button>
+            </Button>
           </div>
           <p className="mt-2 text-sm text-white/40">
             Share this code with your friends
@@ -62,9 +76,13 @@ export function Lobby() {
         {/* Teams */}
         <div className="grid grid-cols-2 gap-4">
           {/* Team A */}
-          <div className={`rounded-lg border p-4 ${
-            myTeam === 0 ? 'border-blue-500 bg-blue-950/30' : 'border-white/10 bg-black/30'
-          }`}>
+          <div
+            className={`rounded-lg border p-4 ${
+              myTeam === 0
+                ? "border-blue-500 bg-blue-950/30"
+                : "border-white/10 bg-black/30"
+            }`}
+          >
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-medium text-blue-400">Team A</h3>
               <span className="text-xs text-white/40">{teamA.length}/2</span>
@@ -75,19 +93,37 @@ export function Lobby() {
                   key={player.userId}
                   className={`flex items-center gap-2 rounded-lg px-3 py-2 ${
                     player.userId === guestId
-                      ? 'bg-blue-900/50 border border-blue-700'
-                      : 'bg-white/5 border border-white/20'
+                      ? "bg-blue-900/50 border border-blue-700"
+                      : "bg-white/5 border border-white/20"
                   }`}
                 >
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-xs font-bold text-white/80">
                     {(player.seat ?? 0) + 1}
                   </span>
-                  <span className={`flex-1 text-sm ${
-                    player.userId === guestId ? 'text-blue-300 font-medium' : 'text-white'
-                  }`}>
+                  <span
+                    className={`flex-1 text-sm ${
+                      player.userId === guestId
+                        ? "text-blue-300 font-medium"
+                        : "text-white"
+                    }`}
+                  >
                     {player.username}
-                    {player.userId === guestId && ' (you)'}
+                    {player.userId === guestId && " (you)"}
                   </span>
+                  {player.isBot && (
+                    <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-white/60">
+                      🤖 BOT
+                    </span>
+                  )}
+                  {isHost && player.isBot && (
+                    <button
+                      onClick={() => removeBot(player.userId)}
+                      aria-label={`Remove ${player.username}`}
+                      className="cursor-pointer text-white/40 transition-colors hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
+                    >
+                      ✕
+                    </button>
+                  )}
                   {player.userId !== guestId && !player.isConnected && (
                     <span className="text-xs text-red-400">offline</span>
                   )}
@@ -102,9 +138,13 @@ export function Lobby() {
           </div>
 
           {/* Team B */}
-          <div className={`rounded-lg border p-4 ${
-            myTeam === 1 ? 'border-red-500 bg-red-950/30' : 'border-white/10 bg-black/30'
-          }`}>
+          <div
+            className={`rounded-lg border p-4 ${
+              myTeam === 1
+                ? "border-red-500 bg-red-950/30"
+                : "border-white/10 bg-black/30"
+            }`}
+          >
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-medium text-red-400">Team B</h3>
               <span className="text-xs text-white/40">{teamB.length}/2</span>
@@ -115,19 +155,37 @@ export function Lobby() {
                   key={player.userId}
                   className={`flex items-center gap-2 rounded-lg px-3 py-2 ${
                     player.userId === guestId
-                      ? 'bg-red-900/50 border border-red-700'
-                      : 'bg-white/5 border border-white/20'
+                      ? "bg-red-900/50 border border-red-700"
+                      : "bg-white/5 border border-white/20"
                   }`}
                 >
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-xs font-bold text-white/80">
                     {(player.seat ?? 0) + 1}
                   </span>
-                  <span className={`flex-1 text-sm ${
-                    player.userId === guestId ? 'text-red-300 font-medium' : 'text-white'
-                  }`}>
+                  <span
+                    className={`flex-1 text-sm ${
+                      player.userId === guestId
+                        ? "text-red-300 font-medium"
+                        : "text-white"
+                    }`}
+                  >
                     {player.username}
-                    {player.userId === guestId && ' (you)'}
+                    {player.userId === guestId && " (you)"}
                   </span>
+                  {player.isBot && (
+                    <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-white/60">
+                      🤖 BOT
+                    </span>
+                  )}
+                  {isHost && player.isBot && (
+                    <button
+                      onClick={() => removeBot(player.userId)}
+                      aria-label={`Remove ${player.username}`}
+                      className="cursor-pointer text-white/40 transition-colors hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
+                    >
+                      ✕
+                    </button>
+                  )}
                   {player.userId !== guestId && !player.isConnected && (
                     <span className="text-xs text-red-400">offline</span>
                   )}
@@ -145,13 +203,28 @@ export function Lobby() {
         {/* Team switch button */}
         {myPlayer && (
           <div className="flex justify-center">
-            <button
+            <Button
               onClick={handleSwitchTeam}
               data-testid="switch-team-btn"
-              className="rounded-lg border border-gray-600 px-4 py-2 text-sm text-white/80 hover:bg-black/30 transition-colors"
+              variant="outline"
+              className="text-sm"
             >
-              Switch to {myTeam === 0 ? 'Team B' : 'Team A'}
-            </button>
+              Switch to {myTeam === 0 ? "Team B" : "Team A"}
+            </Button>
+          </div>
+        )}
+
+        {/* Add bot (dev/testing only) */}
+        {isHost && allowBots && playerCount < 4 && (
+          <div className="flex justify-center">
+            <Button
+              onClick={addBot}
+              data-testid="add-bot-btn"
+              variant="secondary"
+              className="text-sm"
+            >
+              🤖 Add Bot
+            </Button>
           </div>
         )}
 
@@ -176,22 +249,25 @@ export function Lobby() {
 
         {/* Actions */}
         <div className="flex gap-3">
-          <button
+          <Button
             onClick={leaveRoom}
             data-testid="leave-room-btn"
-            className="flex-1 rounded-lg border border-white/20 px-4 py-3 text-white/60 hover:bg-black/30 transition-colors"
+            variant="outline"
+            size="lg"
+            className="flex-1"
           >
             Leave
-          </button>
+          </Button>
           {isHost && (
-            <button
+            <Button
               onClick={startGame}
               data-testid="start-game-btn"
               disabled={!canStart}
-              className="flex-1 rounded-lg bg-green-600 px-4 py-3 font-semibold text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              size="lg"
+              className="flex-1"
             >
-              {canStart ? 'Start Game' : `Need ${4 - playerCount} more`}
-            </button>
+              {canStart ? "Start Game" : `Need ${4 - playerCount} more`}
+            </Button>
           )}
         </div>
       </div>

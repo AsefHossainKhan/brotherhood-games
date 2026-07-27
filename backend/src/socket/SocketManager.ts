@@ -63,6 +63,9 @@ export function setupSocketManager(httpServer: HttpServer): Server {
   io.on('connection', (socket: Socket) => {
     console.log(`Client connected: ${socket.id} (guest: ${socket.data.guestId})`);
 
+    // Advertise server capabilities so the client can gate features (e.g. bots)
+    socket.emit('SERVER_CONFIG', { allowBots: config.allowBots });
+
     handleRoomEvents(io, socket, runtime);
     handleGameEvents(io, socket, runtime);
     handleConnectionEvents(io, socket, runtime);

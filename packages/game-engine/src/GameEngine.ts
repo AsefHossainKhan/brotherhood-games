@@ -106,4 +106,13 @@ export interface GameEngine<TState = unknown> {
    * Returns null if no specific player should act (e.g., between phases).
    */
   getCurrentPlayer(state: TState): string | null;
+
+  /**
+   * Optional: compute the next action an AI bot should take.
+   * Given the current state and the ids of bot-controlled players, returns the
+   * single action the game is currently waiting on from a bot, or `null` when
+   * it is a human's turn (or no action is pending). The runtime calls this
+   * repeatedly so consecutive bot turns resolve automatically.
+   */
+  getBotAction?(state: TState, botIds: string[]): GameAction | null;
 }

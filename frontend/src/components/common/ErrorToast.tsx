@@ -1,7 +1,8 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useGameStore } from '@/stores/gameStore';
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { useGameStore } from "@/stores/gameStore";
 
 interface ErrorInfo {
   code: string;
@@ -26,8 +27,12 @@ export function ErrorToast() {
   if (!visible || !error) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-top">
-      <div className="flex items-start gap-3 rounded-xl border border-red-500/30 bg-black/80 px-4 py-3 shadow-lg backdrop-blur-md">
+    <div className="fixed top-4 right-4 z-50">
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex items-start gap-3 rounded-xl border border-red-500/30 bg-black/80 px-4 py-3 shadow-lg backdrop-blur-md"
+      >
         <span className="text-red-400">⚠️</span>
         <div className="flex-1">
           <div className="text-sm font-medium text-red-300">{error.code}</div>
@@ -35,11 +40,11 @@ export function ErrorToast() {
         </div>
         <button
           onClick={() => setVisible(false)}
-          className="text-red-500 hover:text-red-300"
+          className="cursor-pointer text-red-500 transition-colors hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
         >
           ✕
         </button>
-      </div>
+      </motion.div>
     </div>
   );
 }

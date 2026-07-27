@@ -8,9 +8,11 @@ interface SocketState {
   isConnected: boolean;
   guestId: string;
   username: string;
+  allowBots: boolean;
   connect: (guestId: string, username: string) => void;
   disconnect: () => void;
   updateUsername: (username: string) => void;
+  setAllowBots: (allowBots: boolean) => void;
 }
 
 /** Generate or retrieve guestId from localStorage */
@@ -39,6 +41,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
   isConnected: false,
   guestId: '',
   username: '',
+  allowBots: false,
 
   connect: (guestId: string, username: string) => {
     const existing = get().socket;
@@ -80,6 +83,8 @@ export const useSocketStore = create<SocketState>((set, get) => ({
       localStorage.setItem('brotherhood_username', username);
     }
   },
+
+  setAllowBots: (allowBots: boolean) => set({ allowBots }),
 }));
 
 /** Initialize socket connection (call once on app mount) */
