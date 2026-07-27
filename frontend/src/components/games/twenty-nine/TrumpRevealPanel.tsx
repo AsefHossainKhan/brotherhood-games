@@ -1,7 +1,8 @@
-'use client';
+"use client";
 
-import { useGameStore } from '@/stores/gameStore';
-import { useSocketStore } from '@/stores/socketStore';
+import { useGameStore } from "@/stores/gameStore";
+import { useSocketStore } from "@/stores/socketStore";
+import { Button } from "@/components/common/Button";
 
 export function TrumpRevealPanel() {
   const guestId = useSocketStore((s) => s.guestId);
@@ -13,7 +14,7 @@ export function TrumpRevealPanel() {
   const leadSuit = useGameStore((s) => s.leadSuit);
 
   // Only show during playing phase, trump not yet revealed, and trump exists
-  if (phase !== 'PLAYING' || trump.isRevealed || !trump.type) {
+  if (phase !== "PLAYING" || trump.isRevealed || !trump.type) {
     return null;
   }
 
@@ -37,23 +38,20 @@ export function TrumpRevealPanel() {
       <span className="text-sm text-purple-300">
         No {leadSuit} cards in hand
       </span>
-      <button
-        onClick={() => socket?.emit('REQUEST_TRUMP_REVEAL')}
+      <Button
+        onClick={() => socket?.emit("REQUEST_TRUMP_REVEAL")}
         disabled={!isMyTurn}
-        className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-          isMyTurn
-            ? 'bg-purple-600 text-white hover:bg-purple-500'
-            : 'bg-gray-700 text-gray-400 cursor-not-allowed'
-        }`}
+        variant="purple"
+        className="text-sm font-medium"
       >
-        {isMyTurn ? 'Reveal Trump' : `Waiting for turn...`}
-      </button>
+        {isMyTurn ? "Reveal Trump" : `Waiting for turn...`}
+      </Button>
       <span className="text-[10px] text-white/40">
-        {trump.type === 'joker'
-          ? 'Reveals there is no trump this game'
+        {trump.type === "joker"
+          ? "Reveals there is no trump this game"
           : hasTrumpCards
-          ? 'You have trump cards — must play one after revealing'
-          : 'Trump will be active in trick calculations'}
+            ? "You have trump cards — must play one after revealing"
+            : "Trump will be active in trick calculations"}
       </span>
     </div>
   );

@@ -1,6 +1,7 @@
-'use client';
+"use client";
 
-import { useGame } from '@/hooks/useGame';
+import { useGame } from "@/hooks/useGame";
+import { Button } from "@/components/common/Button";
 
 export function WeakHandPanel() {
   const { weakHandPlayer, myPlayer, cancelWeakHand, keepWeakHand } = useGame();
@@ -21,20 +22,22 @@ export function WeakHandPanel() {
         Your hand has 0 points. You can request a re-deal or keep it.
       </p>
       <div className="flex gap-2">
-        <button
+        <Button
           onClick={cancelWeakHand}
           data-testid="cancel-weak-hand-btn"
-          className="flex-1 rounded-lg bg-yellow-600 px-4 py-2 font-semibold text-white hover:bg-yellow-700 transition-colors"
+          variant="yellow"
+          className="flex-1"
         >
           Re-deal
-        </button>
-        <button
+        </Button>
+        <Button
           onClick={keepWeakHand}
           data-testid="keep-weak-hand-btn"
-          className="flex-1 rounded-lg border border-white/20 bg-white/5 px-4 py-2 text-white/70 hover:bg-white/10 transition-colors"
+          variant="secondary"
+          className="flex-1"
         >
           Keep Hand
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { useGame } from '@/hooks/useGame';
+import { useGame } from "@/hooks/useGame";
 
 const SUITS = [
-  { name: 'hearts', symbol: '♥', color: 'text-red-500' },
-  { name: 'diamonds', symbol: '♦', color: 'text-red-500' },
-  { name: 'clubs', symbol: '♣', color: 'text-gray-300' },
-  { name: 'spades', symbol: '♠', color: 'text-gray-300' },
+  { name: "hearts", symbol: "♥", color: "text-red-500" },
+  { name: "diamonds", symbol: "♦", color: "text-red-500" },
+  { name: "clubs", symbol: "♣", color: "text-gray-300" },
+  { name: "spades", symbol: "♠", color: "text-gray-300" },
 ];
 
 export function TrumpSelector() {
@@ -22,10 +22,12 @@ export function TrumpSelector() {
             key={suit.name}
             onClick={() => selectTrump(suit.name)}
             data-testid={`trump-${suit.name}`}
-            className="flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/5 px-4 py-3 hover:bg-white/10 transition-colors"
+            className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/5 px-4 py-3 hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
           >
             <span className={`text-2xl ${suit.color}`}>{suit.symbol}</span>
-            <span className="text-sm capitalize text-white/90">{suit.name}</span>
+            <span className="text-sm capitalize text-white/90">
+              {suit.name}
+            </span>
           </button>
         ))}
       </div>
@@ -34,14 +36,14 @@ export function TrumpSelector() {
         <button
           onClick={selectSeventhCardTrump}
           data-testid="trump-seventh-card"
-          className="flex-1 rounded-lg border border-purple-500/30 bg-purple-900/20 px-4 py-2 text-sm text-purple-400 hover:bg-purple-900/40 transition-colors"
+          className="flex-1 cursor-pointer rounded-lg border border-purple-500/30 bg-purple-900/20 px-4 py-2 text-sm text-purple-400 hover:bg-purple-900/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
         >
           🂠 7th Card
         </button>
         <button
           onClick={selectJoker}
           data-testid="trump-joker"
-          className="flex-1 rounded-lg border border-orange-500/30 bg-orange-900/20 px-4 py-2 text-sm text-orange-400 hover:bg-orange-900/40 transition-colors"
+          className="flex-1 cursor-pointer rounded-lg border border-orange-500/30 bg-orange-900/20 px-4 py-2 text-sm text-orange-400 hover:bg-orange-900/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
         >
           🃏 Joker
         </button>

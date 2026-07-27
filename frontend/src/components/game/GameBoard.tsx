@@ -1,58 +1,59 @@
-'use client';
+"use client";
 
-import { useGame } from '@/hooks/useGame';
-import { useSocket } from '@/hooks/useSocket';
-import { PlayerSeat } from './PlayerSeat';
-import { HandArea } from './HandArea';
-import { TableArea } from './TableArea';
-import { ScoreBoard } from './ScoreBoard';
-import { TableBackground } from './TableBackground';
-import { AnimatedPanel } from './AnimatedPanel';
-import { BidPanel } from '@/components/games/twenty-nine/BidPanel';
-import { TrumpSelector } from '@/components/games/twenty-nine/TrumpSelector';
-import { DoublePanel } from '@/components/games/twenty-nine/DoublePanel';
-import { WeakHandPanel } from '@/components/games/twenty-nine/WeakHandPanel';
-import { GameStatus } from '@/components/games/twenty-nine/GameStatus';
-import { TrumpRevealPanel } from '@/components/games/twenty-nine/TrumpRevealPanel';
-import { ScoringPanel } from '@/components/games/twenty-nine/ScoringPanel';
-import { MatchCompletePanel } from '@/components/games/twenty-nine/MatchCompletePanel';
-import { MarriagePanel } from '@/components/games/twenty-nine/MarriagePanel';
-import { DisconnectOverlay } from './DisconnectOverlay';
-import { AnimatePresence } from 'framer-motion';
+import { useGame } from "@/hooks/useGame";
+import { useSocket } from "@/hooks/useSocket";
+import { PlayerSeat } from "./PlayerSeat";
+import { HandArea } from "./HandArea";
+import { TableArea } from "./TableArea";
+import { ScoreBoard } from "./ScoreBoard";
+import { TableBackground } from "./TableBackground";
+import { AnimatedPanel } from "./AnimatedPanel";
+import { BidPanel } from "@/components/games/twenty-nine/BidPanel";
+import { TrumpSelector } from "@/components/games/twenty-nine/TrumpSelector";
+import { DoublePanel } from "@/components/games/twenty-nine/DoublePanel";
+import { WeakHandPanel } from "@/components/games/twenty-nine/WeakHandPanel";
+import { GameStatus } from "@/components/games/twenty-nine/GameStatus";
+import { TrumpRevealPanel } from "@/components/games/twenty-nine/TrumpRevealPanel";
+import { ScoringPanel } from "@/components/games/twenty-nine/ScoringPanel";
+import { MatchCompletePanel } from "@/components/games/twenty-nine/MatchCompletePanel";
+import { MarriagePanel } from "@/components/games/twenty-nine/MarriagePanel";
+import { DisconnectOverlay } from "./DisconnectOverlay";
+import { AnimatePresence } from "framer-motion";
 
 export function GameBoard() {
-  const { phase, players, myPlayer, isMyTurn, score, weakHandPlayer } = useGame();
+  const { phase, players, myPlayer, isMyTurn, score, weakHandPlayer } =
+    useGame();
 
   useSocket();
 
   const showWeakHandPanel = weakHandPlayer === myPlayer?.id;
-  const showBidPanel = phase === 'BIDDING' && isMyTurn;
-  const showTrumpSelector = phase === 'TRUMP_SELECTION' && myPlayer?.isDeclarer;
-  const showDoublePanel = phase === 'DOUBLE_PHASE';
-  const showScoringPanel = phase === 'SCORING';
-  const showMatchCompletePanel = phase === 'MATCH_COMPLETE';
+  const showBidPanel = phase === "BIDDING" && isMyTurn;
+  const showTrumpSelector = phase === "TRUMP_SELECTION" && myPlayer?.isDeclarer;
+  const showDoublePanel = phase === "DOUBLE_PHASE";
+  const showScoringPanel = phase === "SCORING";
+  const showMatchCompletePanel = phase === "MATCH_COMPLETE";
 
   const opponents = players.filter((p) => p.id !== myPlayer?.id);
   const mySeat = myPlayer?.seat ?? 0;
 
-  const getPosition = (seat: number): 'top' | 'left' | 'right' => {
+  const getPosition = (seat: number): "top" | "left" | "right" => {
     const rel = (seat - mySeat + 4) % 4;
-    if (rel === 2) return 'top';
-    if (rel === 1) return 'right';
-    return 'left';
+    if (rel === 2) return "top";
+    if (rel === 1) return "right";
+    return "left";
   };
 
-  const topOpponent = opponents.find((p) => getPosition(p.seat) === 'top');
-  const leftOpponent = opponents.find((p) => getPosition(p.seat) === 'left');
-  const rightOpponent = opponents.find((p) => getPosition(p.seat) === 'right');
+  const topOpponent = opponents.find((p) => getPosition(p.seat) === "top");
+  const leftOpponent = opponents.find((p) => getPosition(p.seat) === "left");
+  const rightOpponent = opponents.find((p) => getPosition(p.seat) === "right");
 
   return (
     <TableBackground>
-      <div data-testid="game-board" className="relative flex h-screen flex-col">
+      <div data-testid="game-board" className="relative flex h-dvh flex-col">
         <DisconnectOverlay />
 
         {/* Top bar: scores + status */}
-        <div className="relative z-20 flex items-center justify-between px-4 py-2 shrink-0">
+        <div className="relative z-20 flex flex-wrap items-center justify-between gap-2 px-4 py-2 shrink-0">
           <ScoreBoard />
           <GameStatus />
         </div>
@@ -87,22 +88,30 @@ export function GameBoard() {
                 <AnimatePresence mode="wait">
                   {showWeakHandPanel && (
                     <AnimatedPanel key="weak-hand">
-                      <div data-testid="weak-hand-panel"><WeakHandPanel /></div>
+                      <div data-testid="weak-hand-panel">
+                        <WeakHandPanel />
+                      </div>
                     </AnimatedPanel>
                   )}
                   {showBidPanel && (
                     <AnimatedPanel key="bid-panel">
-                      <div data-testid="bid-panel"><BidPanel /></div>
+                      <div data-testid="bid-panel">
+                        <BidPanel />
+                      </div>
                     </AnimatedPanel>
                   )}
                   {showTrumpSelector && (
                     <AnimatedPanel key="trump-selector">
-                      <div data-testid="trump-selector"><TrumpSelector /></div>
+                      <div data-testid="trump-selector">
+                        <TrumpSelector />
+                      </div>
                     </AnimatedPanel>
                   )}
                   {showDoublePanel && (
                     <AnimatedPanel key="double-panel">
-                      <div data-testid="double-panel"><DoublePanel /></div>
+                      <div data-testid="double-panel">
+                        <DoublePanel />
+                      </div>
                     </AnimatedPanel>
                   )}
                   {showScoringPanel && (

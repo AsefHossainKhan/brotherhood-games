@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { CardComponent } from '@brotherhood/shared/cards';
-import { useGame } from '@/hooks/useGame';
-import { useState, useMemo, useCallback, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { CardComponent } from "@brotherhood/shared/cards";
+import { useGame } from "@/hooks/useGame";
+import { useState, useMemo, useCallback, useRef } from "react";
+import { motion } from "framer-motion";
 import {
   DndContext,
   closestCenter,
@@ -12,15 +12,15 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
-} from '@dnd-kit/core';
+} from "@dnd-kit/core";
 import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
   rectSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface Card {
   suit: string;
@@ -68,9 +68,9 @@ function SortableCard({
       data-testid={`card-${card.suit}-${card.rank}`}
       whileHover={canPlay && !isDragging ? { y: -10 } : {}}
       whileTap={canPlay ? { scale: 0.95 } : {}}
-      className={`${canPlay ? 'cursor-grab active:cursor-grabbing' : ''} ${
-        isDragging ? 'opacity-80' : ''
-      } ${isSelected ? '-translate-y-5' : ''}`}
+      className={`${canPlay ? "cursor-grab active:cursor-grabbing" : ""} ${
+        isDragging ? "opacity-80" : ""
+      } ${isSelected ? "-translate-y-5" : ""}`}
       onClick={canPlay ? onClick : undefined}
     >
       <CardComponent
@@ -91,7 +91,7 @@ export function HandArea({ cards }: HandAreaProps) {
   const serverCardsRef = useRef<Card[]>(cards);
 
   const [displayOrder, setDisplayOrder] = useState<string[]>(() =>
-    cards.map((c, i) => `${c.suit}-${c.rank}-${i}`)
+    cards.map((c, i) => `${c.suit}-${c.rank}-${i}`),
   );
 
   useMemo(() => {
@@ -100,7 +100,7 @@ export function HandArea({ cards }: HandAreaProps) {
     setSelectedIndex(null);
   }, [cards]);
 
-  const canPlay = isMyTurn && phase === 'PLAYING';
+  const canPlay = isMyTurn && phase === "PLAYING";
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -108,25 +108,30 @@ export function HandArea({ cards }: HandAreaProps) {
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-    })
+    }),
   );
 
-  const handleCardClick = useCallback((displayIndex: number) => {
-    if (!canPlay) return;
+  const handleCardClick = useCallback(
+    (displayIndex: number) => {
+      if (!canPlay) return;
 
-    if (selectedIndex === displayIndex) {
-      const cardId = displayOrder[displayIndex];
-      const serverIndex = serverCardsRef.current.findIndex(
-        (_, i) => `${serverCardsRef.current[i].suit}-${serverCardsRef.current[i].rank}-${i}` === cardId
-      );
-      if (serverIndex !== -1) {
-        playCard(serverIndex);
+      if (selectedIndex === displayIndex) {
+        const cardId = displayOrder[displayIndex];
+        const serverIndex = serverCardsRef.current.findIndex(
+          (_, i) =>
+            `${serverCardsRef.current[i].suit}-${serverCardsRef.current[i].rank}-${i}` ===
+            cardId,
+        );
+        if (serverIndex !== -1) {
+          playCard(serverIndex);
+        }
+        setSelectedIndex(null);
+      } else {
+        setSelectedIndex(displayIndex);
       }
-      setSelectedIndex(null);
-    } else {
-      setSelectedIndex(displayIndex);
-    }
-  }, [canPlay, selectedIndex, displayOrder, playCard]);
+    },
+    [canPlay, selectedIndex, displayOrder, playCard],
+  );
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -148,11 +153,13 @@ export function HandArea({ cards }: HandAreaProps) {
         onDragEnd={handleDragEnd}
       >
         <SortableContext items={displayOrder} strategy={rectSortingStrategy}>
-          {/* Simple centered flex row */}
-          <div className="flex items-end justify-center gap-0">
+          {/* Simple centered flex row (scaled down on small screens to avoid overflow) */}
+          <div className="flex origin-bottom scale-75 items-end justify-center gap-0 sm:scale-90 md:scale-100">
             {displayOrder.map((cardId, displayIndex) => {
               const serverIndex = serverCardsRef.current.findIndex(
-                (_, i) => `${serverCardsRef.current[i].suit}-${serverCardsRef.current[i].rank}-${i}` === cardId
+                (_, i) =>
+                  `${serverCardsRef.current[i].suit}-${serverCardsRef.current[i].rank}-${i}` ===
+                  cardId,
               );
               const card = serverCardsRef.current[serverIndex];
               if (!card) return null;
@@ -160,7 +167,8 @@ export function HandArea({ cards }: HandAreaProps) {
               const isSelected = selectedIndex === displayIndex;
               const totalCards = displayOrder.length;
               const centerOffset = (totalCards - 1) / 2;
-              const normalizedPos = (displayIndex - centerOffset) / Math.max(centerOffset, 1);
+              const normalizedPos =
+                (displayIndex - centerOffset) / Math.max(centerOffset, 1);
               const marginBottom = Math.abs(normalizedPos) * 8;
               const rotation = normalizedPos * 3;
 
@@ -170,7 +178,7 @@ export function HandArea({ cards }: HandAreaProps) {
                   style={{
                     marginBottom: `${marginBottom}px`,
                     transform: `rotate(${rotation}deg)`,
-                    marginLeft: displayIndex > 0 ? '-15px' : '0',
+                    marginLeft: displayIndex > 0 ? "-15px" : "0",
                   }}
                 >
                   <SortableCard
