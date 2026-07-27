@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useGame } from "@/hooks/useGame";
 import { useSocket } from "@/hooks/useSocket";
 import { PlayerSeat } from "./PlayerSeat";
@@ -13,18 +14,60 @@ import { TrumpSelector } from "@/components/games/twenty-nine/TrumpSelector";
 import { DoublePanel } from "@/components/games/twenty-nine/DoublePanel";
 import { WeakHandPanel } from "@/components/games/twenty-nine/WeakHandPanel";
 import { GameStatus } from "@/components/games/twenty-nine/GameStatus";
-import { TrumpRevealPanel } from "@/components/games/twenty-nine/TrumpRevealPanel";
 import { ScoringPanel } from "@/components/games/twenty-nine/ScoringPanel";
 import { MatchCompletePanel } from "@/components/games/twenty-nine/MatchCompletePanel";
 import { MarriagePanel } from "@/components/games/twenty-nine/MarriagePanel";
 import { DisconnectOverlay } from "./DisconnectOverlay";
-import { AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 
 export function GameBoard() {
-  const { phase, players, myPlayer, isMyTurn, score, weakHandPlayer } =
-    useGame();
+  const {
+    phase,
+    players,
+    myPlayer,
+    isMyTurn,
+    score,
+    weakHandPlayer,
+    currentTurn,
+    biddingResult,
+    leadSuit,
+    trump,
+    requestTrumpReveal,
+  } = useGame();
 
   useSocket();
+
+  // When it's my turn and I hold no card of the led suit, the trump has to be
+  // revealed before I can sensibly play. Reveal it automatically so I can see
+  // what the trump is (and why) instead of having to choose a card blindly.
+  const revealRequestedRef = useRef(false);
+  useEffect(() => {
+    const iAmVoidInLead =
+      !!leadSuit &&
+      !(myPlayer?.hand ?? []).some(
+        (c: { suit: string }) => c.suit === leadSuit,
+      );
+    const needsReveal =
+      phase === "PLAYING" &&
+      isMyTurn &&
+      iAmVoidInLead &&
+      !trump.isRevealed &&
+      !!trump.type;
+    if (needsReveal && !revealRequestedRef.current) {
+      revealRequestedRef.current = true;
+      requestTrumpReveal();
+    } else if (!needsReveal) {
+      revealRequestedRef.current = false;
+    }
+  }, [
+    phase,
+    isMyTurn,
+    leadSuit,
+    myPlayer,
+    trump.isRevealed,
+    trump.type,
+    requestTrumpReveal,
+  ]);
 
   const showWeakHandPanel = weakHandPlayer === myPlayer?.id;
   const showBidPanel = phase === "BIDDING" && isMyTurn;
@@ -35,6 +78,7 @@ export function GameBoard() {
 
   const opponents = players.filter((p) => p.id !== myPlayer?.id);
   const mySeat = myPlayer?.seat ?? 0;
+  const currentTurnId = players[currentTurn]?.id ?? null;
 
   const getPosition = (seat: number): "top" | "left" | "right" => {
     const rel = (seat - mySeat + 4) % 4;
@@ -49,42 +93,90 @@ export function GameBoard() {
 
   return (
     <TableBackground>
-      <div data-testid="game-board" className="relative flex h-dvh flex-col">
+      <div
+        data-testid="game-board"
+        className="relative flex h-dvh flex-col overflow-hidden"
+      >
         <DisconnectOverlay />
 
-        {/* Top bar: scores + status */}
-        <div className="relative z-20 flex flex-wrap items-center justify-between gap-2 px-4 py-2 shrink-0">
+        {/* Top bar: scores + status. Single non-wrapping row so it stays
+            compact (~40px) on short 720p viewports (~600px usable height). */}
+        <div className="relative z-20 flex shrink-0 items-center justify-between gap-2 overflow-x-auto px-3 py-1">
           <ScoreBoard />
           <GameStatus />
         </div>
 
-        {/* Main game area - takes remaining space */}
+        {/* Transient banner announcing who won the auction. */}
+        <AnimatePresence>
+          {biddingResult && (
+            <motion.div
+              key="bidding-result-banner"
+              initial={{ opacity: 0, y: -12, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -12, scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 260, damping: 24 }}
+              className="pointer-events-none absolute left-1/2 top-16 z-40 -translate-x-1/2 rounded-xl border border-yellow-400/50 bg-black/70 px-5 py-2.5 text-center shadow-lg backdrop-blur-sm"
+            >
+              <div className="text-[11px] uppercase tracking-wide text-yellow-300/70">
+                Bidding won
+              </div>
+              <div className="text-sm font-bold text-yellow-300">
+                {biddingResult.declarerId === myPlayer?.id
+                  ? "You"
+                  : (players.find((p) => p.id === biddingResult.declarerId)
+                      ?.username ?? "Declarer")}{" "}
+                {biddingResult.winningBid != null && (
+                  <span className="text-white/80">
+                    at {biddingResult.winningBid}
+                  </span>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Main game area - takes remaining space. */}
         <div className="relative flex-1 min-h-0">
           {/* Opponent seats */}
           {leftOpponent && (
             <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10">
-              <PlayerSeat player={leftOpponent} position="left" />
+              <PlayerSeat
+                player={leftOpponent}
+                position="left"
+                isCurrentTurn={leftOpponent.id === currentTurnId}
+              />
             </div>
           )}
 
           {rightOpponent && (
             <div className="absolute right-4 top-1/2 -translate-y-1/2 z-10">
-              <PlayerSeat player={rightOpponent} position="right" />
+              <PlayerSeat
+                player={rightOpponent}
+                position="right"
+                isCurrentTurn={rightOpponent.id === currentTurnId}
+              />
             </div>
           )}
 
           {topOpponent && (
-            <div className="absolute left-1/2 top-4 -translate-x-1/2 z-10">
-              <PlayerSeat player={topOpponent} position="top" />
+            <div className="absolute left-1/2 top-1 -translate-x-1/2 z-10">
+              <PlayerSeat
+                player={topOpponent}
+                position="top"
+                isCurrentTurn={topOpponent.id === currentTurnId}
+              />
             </div>
           )}
 
-          {/* Center: table + panels */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="relative z-10">
+          {/* Center: table + panels. Raised above the hand (z-30) so the
+              interaction panels are never covered by hand cards, while the
+              scaffolding stays pointer-transparent so it never blocks the hand;
+              only the interactive panel wrapper re-enables pointer events. */}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="relative z-30 -translate-y-2">
               <TableArea />
 
-              <div className="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2">
+              <div className="pointer-events-auto absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2">
                 <AnimatePresence mode="wait">
                   {showWeakHandPanel && (
                     <AnimatedPanel key="weak-hand">
@@ -123,9 +215,6 @@ export function GameBoard() {
                     <AnimatedPanel key="match-complete-panel">
                       <MatchCompletePanel />
                     </AnimatedPanel>
-                  )}
-                  {!showScoringPanel && !showMatchCompletePanel && (
-                    <TrumpRevealPanel key="trump-reveal" />
                   )}
                 </AnimatePresence>
               </div>

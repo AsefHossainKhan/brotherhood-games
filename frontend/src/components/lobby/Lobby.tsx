@@ -17,9 +17,12 @@ export function Lobby() {
     leaveRoom,
     changeTeam,
     changeSeat,
+    addBot,
+    removeBot,
   } = useRoom();
 
   const guestId = useSocketStore((s) => s.guestId);
+  const allowBots = useSocketStore((s) => s.allowBots);
 
   useSocket();
 
@@ -107,6 +110,20 @@ export function Lobby() {
                     {player.username}
                     {player.userId === guestId && " (you)"}
                   </span>
+                  {player.isBot && (
+                    <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-white/60">
+                      🤖 BOT
+                    </span>
+                  )}
+                  {isHost && player.isBot && (
+                    <button
+                      onClick={() => removeBot(player.userId)}
+                      aria-label={`Remove ${player.username}`}
+                      className="cursor-pointer text-white/40 transition-colors hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
+                    >
+                      ✕
+                    </button>
+                  )}
                   {player.userId !== guestId && !player.isConnected && (
                     <span className="text-xs text-red-400">offline</span>
                   )}
@@ -155,6 +172,20 @@ export function Lobby() {
                     {player.username}
                     {player.userId === guestId && " (you)"}
                   </span>
+                  {player.isBot && (
+                    <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-white/60">
+                      🤖 BOT
+                    </span>
+                  )}
+                  {isHost && player.isBot && (
+                    <button
+                      onClick={() => removeBot(player.userId)}
+                      aria-label={`Remove ${player.username}`}
+                      className="cursor-pointer text-white/40 transition-colors hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60"
+                    >
+                      ✕
+                    </button>
+                  )}
                   {player.userId !== guestId && !player.isConnected && (
                     <span className="text-xs text-red-400">offline</span>
                   )}
@@ -179,6 +210,20 @@ export function Lobby() {
               className="text-sm"
             >
               Switch to {myTeam === 0 ? "Team B" : "Team A"}
+            </Button>
+          </div>
+        )}
+
+        {/* Add bot (dev/testing only) */}
+        {isHost && allowBots && playerCount < 4 && (
+          <div className="flex justify-center">
+            <Button
+              onClick={addBot}
+              data-testid="add-bot-btn"
+              variant="secondary"
+              className="text-sm"
+            >
+              🤖 Add Bot
             </Button>
           </div>
         )}

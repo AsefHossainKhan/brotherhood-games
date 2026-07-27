@@ -15,7 +15,7 @@ export function DoublePanel() {
 
   if (!isMyTurn) {
     return (
-      <div className="rounded-xl border border-white/20 bg-black/60 p-4 backdrop-blur-md">
+      <div className="w-72 max-w-[85vw] rounded-xl border border-white/20 bg-black/60 p-4 backdrop-blur-md">
         <h3 className="mb-3 text-sm font-medium text-white/60">Double Phase</h3>
         <div className="mb-3 text-center">
           <span className="text-xs text-white/40">Current: </span>
@@ -31,7 +31,7 @@ export function DoublePanel() {
   }
 
   return (
-    <div className="rounded-xl border border-white/20 bg-black/60 p-4 backdrop-blur-md">
+    <div className="w-72 max-w-[85vw] rounded-xl border border-white/20 bg-black/60 p-4 backdrop-blur-md">
       <h3 className="mb-3 text-sm font-medium text-white/60">Double Phase</h3>
 
       <div className="mb-3 text-center">

@@ -13,7 +13,7 @@ export function WeakHandPanel() {
   return (
     <div
       data-testid="weak-hand-panel"
-      className="rounded-xl border border-yellow-500/30 bg-black/70 p-4 backdrop-blur-md"
+      className="w-72 max-w-[85vw] rounded-xl border border-yellow-500/30 bg-black/70 p-4 backdrop-blur-md"
     >
       <h3 className="mb-2 text-sm font-medium text-yellow-400">
         ⚠️ Weak Hand Detected

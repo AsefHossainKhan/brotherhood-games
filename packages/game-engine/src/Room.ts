@@ -18,6 +18,9 @@ export class Room {
   public players: Map<string, RoomPlayer> = new Map();
   public spectators: Map<string, Spectator> = new Map();
 
+  /** Ids of AI-controlled players in this room. */
+  public botIds: Set<string> = new Set();
+
   /** In-memory game state (set when game starts) */
   public gameState: unknown = null;
 
@@ -62,15 +65,33 @@ export class Room {
       team: (assignedSeat % 2) as 0 | 1, // Default team based on seat
       isConnected: true,
       joinedAt: new Date().toISOString(),
+      isBot: this.botIds.has(userId),
     };
 
     this.players.set(userId, player);
     return player;
   }
 
+  /** Add an AI bot as a player. Returns the created player. */
+  addBot(userId: string, username: string, seat?: number): RoomPlayer {
+    this.botIds.add(userId);
+    try {
+      return this.addPlayer(userId, username, seat);
+    } catch (err) {
+      this.botIds.delete(userId);
+      throw err;
+    }
+  }
+
+  /** Whether a user id is an AI bot. */
+  isBot(userId: string): boolean {
+    return this.botIds.has(userId);
+  }
+
   /** Remove a player. */
   removePlayer(userId: string): void {
     this.players.delete(userId);
+    this.botIds.delete(userId);
   }
 
   /** Add a spectator. */

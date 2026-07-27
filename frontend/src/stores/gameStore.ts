@@ -67,6 +67,17 @@ interface DisconnectState {
   remainingSeconds: number;
 }
 
+interface HeldTrick {
+  cards: TrickPlay[];
+  winnerId: string | null;
+  trickNumber: number;
+}
+
+interface BiddingResult {
+  declarerId: string;
+  winningBid: number | null;
+}
+
 interface GameState {
   phase: string;
   players: PlayerState[];
@@ -83,10 +94,17 @@ interface GameState {
   settings: any;
   lastError: { code: string; message: string; timestamp: number } | null;
   disconnectedPlayer: DisconnectState | null;
+  // Transient UI aids so the user can see the last completed trick / bid result
+  // before play advances (server applies a matching review delay).
+  heldTrick: HeldTrick | null;
+  biddingResult: BiddingResult | null;
 
   setGameState: (state: any) => void;
   setDisconnectedPlayer: (player: DisconnectState | null) => void;
   updateDisconnectedCountdown: () => void;
+  setHeldTrick: (trick: HeldTrick | null) => void;
+  clearHeldTrick: (trickNumber: number) => void;
+  setBiddingResult: (result: BiddingResult | null) => void;
   clearGame: () => void;
 }
 
@@ -132,6 +150,8 @@ export const useGameStore = create<GameState>((set) => ({
   settings: null,
   lastError: null,
   disconnectedPlayer: null,
+  heldTrick: null,
+  biddingResult: null,
 
   setGameState: (state: any) => {
     set({
@@ -152,6 +172,19 @@ export const useGameStore = create<GameState>((set) => ({
   },
 
   setDisconnectedPlayer: (player) => set({ disconnectedPlayer: player }),
+
+  setHeldTrick: (trick) => set({ heldTrick: trick }),
+
+  // Only clear if it is still the same trick we are holding (avoids a stale
+  // timer wiping a newer held trick).
+  clearHeldTrick: (trickNumber) =>
+    set((state) =>
+      state.heldTrick && state.heldTrick.trickNumber === trickNumber
+        ? { heldTrick: null }
+        : state,
+    ),
+
+  setBiddingResult: (result) => set({ biddingResult: result }),
 
   updateDisconnectedCountdown: () => set((state) => {
     if (!state.disconnectedPlayer) return state;
@@ -182,6 +215,8 @@ export const useGameStore = create<GameState>((set) => ({
       weakHandPlayer: null,
       settings: null,
       disconnectedPlayer: null,
+      heldTrick: null,
+      biddingResult: null,
     });
   },
 }));

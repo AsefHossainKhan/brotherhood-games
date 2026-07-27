@@ -13,7 +13,7 @@ export function TrumpSelector() {
   const { selectTrump, selectSeventhCardTrump, selectJoker } = useGame();
 
   return (
-    <div className="rounded-xl border border-white/20 bg-black/60 p-4 backdrop-blur-md">
+    <div className="w-72 max-w-[85vw] rounded-xl border border-white/20 bg-black/60 p-4 backdrop-blur-md">
       <h3 className="mb-3 text-sm font-medium text-white/60">Select Trump</h3>
 
       <div className="mb-4 grid grid-cols-2 gap-2">

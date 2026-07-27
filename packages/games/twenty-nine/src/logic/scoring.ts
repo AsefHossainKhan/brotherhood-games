@@ -1,19 +1,24 @@
-import type { Suit } from '@brotherhood/shared';
-import type { DoubleLevel, MatchScore } from '../types';
-import { MULTIPLIER_NORMAL, MULTIPLIER_DOUBLE, MULTIPLIER_REDOUBLE, MULTIPLIER_FULLSET } from '@brotherhood/shared';
+import type { Suit } from "@brotherhood/shared";
+import type { DoubleLevel, MatchScore } from "../types";
+import {
+  MULTIPLIER_NORMAL,
+  MULTIPLIER_DOUBLE,
+  MULTIPLIER_REDOUBLE,
+  MULTIPLIER_FULLSET,
+} from "@brotherhood/shared";
 
 /**
  * Get the multiplier for a double level.
  */
 export function getMultiplier(level: DoubleLevel): number {
   switch (level) {
-    case 'normal':
+    case "normal":
       return MULTIPLIER_NORMAL;
-    case 'double':
+    case "double":
       return MULTIPLIER_DOUBLE;
-    case 'redouble':
+    case "redouble":
       return MULTIPLIER_REDOUBLE;
-    case 'fullset':
+    case "fullset":
       return MULTIPLIER_FULLSET;
   }
 }
@@ -30,18 +35,18 @@ export function canDeclareDouble(
   level: DoubleLevel,
   currentLevel: DoubleLevel,
   callerTeam: 0 | 1,
-  declarerTeam: 0 | 1
+  declarerTeam: 0 | 1,
 ): boolean {
   const isOpponent = callerTeam !== declarerTeam;
   const isDeclarerTeam = callerTeam === declarerTeam;
 
   switch (level) {
-    case 'double':
-      return currentLevel === 'normal' && isOpponent;
-    case 'redouble':
-      return currentLevel === 'double' && isDeclarerTeam;
-    case 'fullset':
-      return currentLevel === 'redouble' && isOpponent;
+    case "double":
+      return currentLevel === "normal" && isOpponent;
+    case "redouble":
+      return currentLevel === "double" && isDeclarerTeam;
+    case "fullset":
+      return currentLevel === "redouble" && isOpponent;
     default:
       return false;
   }
@@ -59,8 +64,11 @@ export function canDeclareDouble(
  * @returns [team0Points, team1Points]
  */
 export function calculateTeamPoints(
-  tricks: { plays: { playerId: string; card: { suit: string; rank: string } }[]; winnerId: string }[],
-  teams: Map<string, 0 | 1>
+  tricks: {
+    plays: { playerId: string; card: { suit: string; rank: string } }[];
+    winnerId: string;
+  }[],
+  teams: Map<string, 0 | 1>,
 ): [number, number] {
   const points: [number, number] = [0, 0];
 
@@ -71,10 +79,10 @@ export function calculateTeamPoints(
     let trickPoints = 0;
     for (const play of trick.plays) {
       const rank = play.card.rank;
-      if (rank === 'J') trickPoints += 3;
-      else if (rank === '9') trickPoints += 2;
-      else if (rank === 'A') trickPoints += 1;
-      else if (rank === '10') trickPoints += 1;
+      if (rank === "J") trickPoints += 3;
+      else if (rank === "9") trickPoints += 2;
+      else if (rank === "A") trickPoints += 1;
+      else if (rank === "10") trickPoints += 1;
     }
 
     points[winnerTeam] += trickPoints;
@@ -88,7 +96,7 @@ export function calculateTeamPoints(
  */
 export function didDeclarerSucceed(
   teamPoints: number,
-  effectiveBid: number
+  effectiveBid: number,
 ): boolean {
   return teamPoints >= effectiveBid;
 }
@@ -101,23 +109,23 @@ export function didDeclarerSucceed(
  * Re-Double: ±4
  * Full Set: ±6
  *
- * If declarer succeeds: declarer team gets +matchPoints, opponents get -matchPoints
- * If declarer fails: opponents get +matchPoints, declarer team gets -matchPoints
+ * Only the team that took the bid (the declarer team) has its score changed.
+ * The non-bidding team never has any score change.
+ * If declarer succeeds: declarer team gets +matchPoints.
+ * If declarer fails: declarer team gets -matchPoints.
  */
 export function calculateMatchPoints(
   declarerTeam: 0 | 1,
   bidSuccess: boolean,
-  multiplier: number
+  multiplier: number,
 ): [number, number] {
   const matchPoints = multiplier;
+  const result: [number, number] = [0, 0];
 
-  if (bidSuccess) {
-    // Declarer succeeds
-    return declarerTeam === 0 ? [matchPoints, -matchPoints] : [-matchPoints, matchPoints];
-  } else {
-    // Declarer fails
-    return declarerTeam === 0 ? [-matchPoints, matchPoints] : [matchPoints, -matchPoints];
-  }
+  // Only the bidding team's score changes.
+  result[declarerTeam] = bidSuccess ? matchPoints : -matchPoints;
+
+  return result;
 }
 
 /**
@@ -131,7 +139,7 @@ export function calculateMatchPoints(
  */
 export function checkSetCompletion(
   cumulativeScores: [number, number],
-  threshold: number
+  threshold: number,
 ): { setCompleted: boolean; winner: 0 | 1 | null } {
   // Team 0 reaches +threshold → Team 0 wins
   if (cumulativeScores[0] >= threshold) {
@@ -156,9 +164,11 @@ export function checkSetCompletion(
 /**
  * Calculate bonus points for special scenarios.
  *
- * - All 8 tricks: +1 bonus point for the team that won all tricks
- * - Zero tricks (opponent's bid): -1 bonus for the team that won 0 tricks
- *   (Only applies when the opponent was the declarer and got zero tricks)
+ * The +1 / -1 modifier only ever applies to the team that took the bid
+ * (the declarer team). The non-bidding team never has any score change.
+ *
+ * - Declarer team wins all 8 tricks: +1 modifier for the declarer team
+ * - Declarer team wins 0 tricks: -1 modifier for the declarer team
  *
  * @param tricksWonPerTeam [team0TricksWon, team1TricksWon]
  * @param declarerTeam Which team was the declarer
@@ -166,30 +176,19 @@ export function checkSetCompletion(
  */
 export function calculateBonusPoints(
   tricksWonPerTeam: [number, number],
-  declarerTeam: 0 | 1
+  declarerTeam: 0 | 1,
 ): [number, number] {
   const bonuses: [number, number] = [0, 0];
   const totalTricks = tricksWonPerTeam[0] + tricksWonPerTeam[1];
 
-  // All 8 tricks bonus: +1 for the team that won all tricks
-  if (tricksWonPerTeam[0] === totalTricks && totalTricks === 8) {
-    bonuses[0] += 1;
-  }
-  if (tricksWonPerTeam[1] === totalTricks && totalTricks === 8) {
-    bonuses[1] += 1;
+  // All 8 tricks bonus: +1 for the declarer team if it won every trick.
+  if (totalTricks === 8 && tricksWonPerTeam[declarerTeam] === totalTricks) {
+    bonuses[declarerTeam] += 1;
   }
 
-  // Zero tricks penalty: if declarer team got 0 tricks, they get -1
-  // (Opponent gets 0 tricks when it's their bid - rare but possible)
+  // Zero tricks penalty: if the declarer team got 0 tricks, they get -1.
   if (tricksWonPerTeam[declarerTeam] === 0) {
     bonuses[declarerTeam] -= 1;
-  }
-  // If opponent team got 0 tricks (declarer won all), declarer gets +1 bonus
-  const opponentTeam = declarerTeam === 0 ? 1 : 0;
-  if (tricksWonPerTeam[opponentTeam] === 0) {
-    // This is already covered by the all-tricks bonus above
-    // But if we want to explicitly give +1 for opponent getting 0:
-    // bonuses[declarerTeam] += 1; // Already handled by all-tricks
   }
 
   return bonuses;
@@ -200,7 +199,7 @@ export function calculateBonusPoints(
  */
 export function calculateTricksWonPerTeam(
   completedTricks: { winnerId: string }[],
-  teams: Map<string, 0 | 1>
+  teams: Map<string, 0 | 1>,
 ): [number, number] {
   const tricksWon: [number, number] = [0, 0];
 
@@ -226,7 +225,7 @@ export function updateScore(
   matchPointsResult: [number, number],
   bonusPoints: [number, number],
   bidSuccess: boolean,
-  setThreshold: number
+  setThreshold: number,
 ): MatchScore {
   // Calculate new match points
   const newMatchPoints: [number, number] = [
@@ -246,7 +245,7 @@ export function updateScore(
       teamPoints,
       matchPoints: [0, 0],
       sets: newSets,
-      lastBidResult: bidSuccess ? 'success' : 'fail',
+      lastBidResult: bidSuccess ? "success" : "fail",
     };
   }
 
@@ -254,6 +253,6 @@ export function updateScore(
     teamPoints,
     matchPoints: newMatchPoints,
     sets: newSets,
-    lastBidResult: bidSuccess ? 'success' : 'fail',
+    lastBidResult: bidSuccess ? "success" : "fail",
   };
 }

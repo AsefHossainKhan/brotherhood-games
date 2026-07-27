@@ -45,6 +45,14 @@ export function useRoom() {
     socket?.emit('CHANGE_SEAT', { seat });
   };
 
+  const addBot = () => {
+    socket?.emit('ADD_BOT');
+  };
+
+  const removeBot = (botId: string) => {
+    socket?.emit('REMOVE_BOT', { botId });
+  };
+
   return {
     ...room,
     createRoom,
@@ -54,6 +62,8 @@ export function useRoom() {
     startGame,
     changeTeam,
     changeSeat,
+    addBot,
+    removeBot,
     updateUsername,
   };
 }

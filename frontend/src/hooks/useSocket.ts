@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import { useSocketStore } from '@/stores/socketStore';
-import { useRoomStore } from '@/stores/roomStore';
-import { useGameStore } from '@/stores/gameStore';
+import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { useSocketStore } from "@/stores/socketStore";
+import { useRoomStore } from "@/stores/roomStore";
+import { useGameStore } from "@/stores/gameStore";
 
 /**
  * Hook to manage Socket.IO event listeners.
@@ -23,150 +23,218 @@ export function useSocket() {
   useEffect(() => {
     if (!socket || listenersAttached.current) return;
 
+    // ---- Server capabilities ----
+    socket.on("SERVER_CONFIG", (data) => {
+      useSocketStore.getState().setAllowBots(!!data?.allowBots);
+    });
+
     // ---- Room Events ----
-    socket.on('ROOM_UPDATED', (data) => {
+    socket.on("ROOM_UPDATED", (data) => {
       setRoom(data.room);
     });
 
-    socket.on('PLAYER_JOINED', (data) => {
-      console.log('Player joined:', data.player?.username);
+    socket.on("PLAYER_JOINED", (data) => {
+      console.log("Player joined:", data.player?.username);
     });
 
-    socket.on('PLAYER_LEFT', (data) => {
-      console.log('Player left:', data.playerId);
+    socket.on("PLAYER_LEFT", (data) => {
+      console.log("Player left:", data.playerId);
     });
 
-    socket.on('SPECTATOR_JOINED', (data) => {
-      console.log('Spectator joined:', data.spectator?.username);
+    socket.on("SPECTATOR_JOINED", (data) => {
+      console.log("Spectator joined:", data.spectator?.username);
     });
 
-    socket.on('SPECTATOR_LEFT', (data) => {
-      console.log('Spectator left:', data.spectatorId);
+    socket.on("SPECTATOR_LEFT", (data) => {
+      console.log("Spectator left:", data.spectatorId);
     });
 
     // ---- Game Lifecycle Events ----
-    socket.on('GAME_STARTED', (data) => {
-      console.log('Game started:', data.matchId);
+    socket.on("GAME_STARTED", (data) => {
+      console.log("Game started:", data.matchId);
     });
 
-    socket.on('GAME_STATE_UPDATED', (state) => {
+    socket.on("GAME_STATE_UPDATED", (state) => {
       setGameState(state);
     });
 
-    socket.on('GAME_FINISHED', (data) => {
-      console.log('Game finished:', data.winner, data.reason);
+    socket.on("GAME_FINISHED", (data) => {
+      console.log("Game finished:", data.winner, data.reason);
       // Forfeit means the room is cleaned up — navigate home
-      if (data.winner === 'forfeit') {
+      if (data.winner === "forfeit") {
         clearGame();
         clearRoom();
-        router.push('/');
+        router.push("/");
       }
     });
 
     // ---- Granular Game Events (for future animations/sounds) ----
-    socket.on('BID_UPDATED', (data) => {
-      console.log('Bid:', data.playerId, data.bid ?? 'pass');
+    socket.on("BID_UPDATED", (data) => {
+      console.log("Bid:", data.playerId, data.bid ?? "pass");
     });
 
-    socket.on('BIDDING_FINISHED', (data) => {
-      console.log('Bidding done. Declarer:', data.declarerId, 'Bid:', data.winningBid);
+    socket.on("BIDDING_FINISHED", (data) => {
+      console.log(
+        "Bidding done. Declarer:",
+        data.declarerId,
+        "Bid:",
+        data.winningBid,
+      );
+      // Briefly surface who won the auction before play advances.
+      useGameStore.getState().setBiddingResult({
+        declarerId: data.declarerId,
+        winningBid: data.winningBid ?? null,
+      });
+      setTimeout(() => {
+        useGameStore.getState().setBiddingResult(null);
+      }, 2600);
     });
 
-    socket.on('TRUMP_SELECTED', (data) => {
-      console.log('Trump selected:', data.type, data.suit ?? '');
+    socket.on("TRUMP_SELECTED", (data) => {
+      console.log("Trump selected:", data.type, data.suit ?? "");
     });
 
-    socket.on('TRUMP_REVEALED', (data) => {
-      console.log('Trump revealed:', data.suit, 'by', data.playerId, data.seventhCard ? `(7th card: ${data.seventhCard.rank} of ${data.seventhCard.suit})` : '');
+    socket.on("TRUMP_REVEALED", (data) => {
+      console.log(
+        "Trump revealed:",
+        data.suit,
+        "by",
+        data.playerId,
+        data.seventhCard
+          ? `(7th card: ${data.seventhCard.rank} of ${data.seventhCard.suit})`
+          : "",
+      );
     });
 
-    socket.on('MARRIAGE_DECLARED', (data) => {
-      console.log('Marriage:', data.suit, 'by', data.playerId, '→ effective bid:', data.effectiveBid);
+    socket.on("MARRIAGE_DECLARED", (data) => {
+      console.log(
+        "Marriage:",
+        data.suit,
+        "by",
+        data.playerId,
+        "→ effective bid:",
+        data.effectiveBid,
+      );
     });
 
-    socket.on('CARD_PLAYED', (data) => {
-      console.log('Card played:', data.cardId, 'by', data.playerId);
+    socket.on("CARD_PLAYED", (data) => {
+      console.log("Card played:", data.cardId, "by", data.playerId);
     });
 
-    socket.on('TRICK_COMPLETED', (data) => {
-      console.log('Trick', data.trickNumber, 'won by', data.winnerId);
+    socket.on("TRICK_COMPLETED", (data) => {
+      console.log("Trick", data.trickNumber, "won by", data.winnerId);
+      // Hold the completed trick on-screen momentarily; the engine resets the
+      // trick in the same state update, so without this the four cards vanish
+      // instantly. The trick stays fully visible for ~2s, then the cards sweep
+      // off to the winner (~0.6s). The server applies a matching review delay
+      // before the next lead so this hold is never cut short.
+      useGameStore.getState().setHeldTrick({
+        cards: data.cards ?? [],
+        winnerId: data.winnerId ?? null,
+        trickNumber: data.trickNumber,
+      });
+      setTimeout(() => {
+        useGameStore.getState().clearHeldTrick(data.trickNumber);
+      }, 3000);
     });
 
-    socket.on('SCORE_UPDATED', (data) => {
-      console.log('Score:', data.team1Points, '-', data.team2Points, '|', data.bidResult);
+    socket.on("SCORE_UPDATED", (data) => {
+      console.log(
+        "Score:",
+        data.team1Points,
+        "-",
+        data.team2Points,
+        "|",
+        data.bidResult,
+      );
     });
 
-    socket.on('NEXT_HAND_STARTED', (data) => {
-      console.log('Next hand started. Dealer:', data.dealerId);
+    socket.on("NEXT_HAND_STARTED", (data) => {
+      console.log("Next hand started. Dealer:", data.dealerId);
       // Game state is already updated via GAME_STATE_UPDATED
     });
 
-    socket.on('MATCH_FINISHED', (data) => {
-      console.log('Match finished:', data.winner, data.reason);
+    socket.on("MATCH_FINISHED", (data) => {
+      console.log("Match finished:", data.winner, data.reason);
       // Game state is already updated via GAME_STATE_UPDATED to MATCH_COMPLETE phase
     });
 
-    socket.on('GAME_CANCELLED', (data) => {
-      console.log('Game cancelled:', data.reason);
+    socket.on("GAME_CANCELLED", (data) => {
+      console.log("Game cancelled:", data.reason);
       // Game state is already updated via GAME_STATE_UPDATED to MATCH_COMPLETE phase
     });
 
     // ---- Connection Events ----
-    socket.on('PLAYER_DISCONNECTED', (data) => {
-      console.log('Player disconnected:', data.playerId);
+    socket.on("PLAYER_DISCONNECTED", (data) => {
+      console.log("Player disconnected:", data.playerId);
       const state = useGameStore.getState();
       const player = state.players.find((p) => p.id === data.playerId);
       setDisconnectedPlayer({
         playerId: data.playerId,
-        username: player?.username ?? 'Unknown',
+        username: player?.username ?? "Unknown",
         expiresAt: Date.now() + data.timeout,
         remainingSeconds: Math.ceil(data.timeout / 1000),
       });
     });
 
-    socket.on('PLAYER_RECONNECTED', (data) => {
-      console.log('Player reconnected:', data.playerId);
+    socket.on("PLAYER_RECONNECTED", (data) => {
+      console.log("Player reconnected:", data.playerId);
       setDisconnectedPlayer(null);
     });
 
     // ---- Error Handling ----
-    socket.on('ERROR', (data) => {
-      console.error(`[${data.code}] ${data.message}`);
+    socket.on("ERROR", (data) => {
+      // Surfaced to the user via the ErrorToast; not a developer error, so we
+      // deliberately do NOT log to console.error (avoids a red console entry
+      // next to the toast for expected validation failures like follow-suit).
       // Update game store with error for UI display
       useGameStore.setState((state: any) => ({
         ...state,
-        lastError: { code: data.code, message: data.message, timestamp: Date.now() },
+        lastError: {
+          code: data.code,
+          message: data.message,
+          timestamp: Date.now(),
+        },
       }));
     });
 
     listenersAttached.current = true;
 
     return () => {
-      socket.off('ROOM_UPDATED');
-      socket.off('PLAYER_JOINED');
-      socket.off('PLAYER_LEFT');
-      socket.off('SPECTATOR_JOINED');
-      socket.off('SPECTATOR_LEFT');
-      socket.off('GAME_STARTED');
-      socket.off('GAME_STATE_UPDATED');
-      socket.off('GAME_FINISHED');
-      socket.off('BID_UPDATED');
-      socket.off('BIDDING_FINISHED');
-      socket.off('TRUMP_SELECTED');
-      socket.off('TRUMP_REVEALED');
-      socket.off('MARRIAGE_DECLARED');
-      socket.off('CARD_PLAYED');
-      socket.off('TRICK_COMPLETED');
-      socket.off('SCORE_UPDATED');
-      socket.off('NEXT_HAND_STARTED');
-      socket.off('MATCH_FINISHED');
-      socket.off('GAME_CANCELLED');
-      socket.off('PLAYER_DISCONNECTED');
-      socket.off('PLAYER_RECONNECTED');
-      socket.off('ERROR');
+      socket.off("SERVER_CONFIG");
+      socket.off("ROOM_UPDATED");
+      socket.off("PLAYER_JOINED");
+      socket.off("PLAYER_LEFT");
+      socket.off("SPECTATOR_JOINED");
+      socket.off("SPECTATOR_LEFT");
+      socket.off("GAME_STARTED");
+      socket.off("GAME_STATE_UPDATED");
+      socket.off("GAME_FINISHED");
+      socket.off("BID_UPDATED");
+      socket.off("BIDDING_FINISHED");
+      socket.off("TRUMP_SELECTED");
+      socket.off("TRUMP_REVEALED");
+      socket.off("MARRIAGE_DECLARED");
+      socket.off("CARD_PLAYED");
+      socket.off("TRICK_COMPLETED");
+      socket.off("SCORE_UPDATED");
+      socket.off("NEXT_HAND_STARTED");
+      socket.off("MATCH_FINISHED");
+      socket.off("GAME_CANCELLED");
+      socket.off("PLAYER_DISCONNECTED");
+      socket.off("PLAYER_RECONNECTED");
+      socket.off("ERROR");
       listenersAttached.current = false;
     };
-  }, [socket, setRoom, clearRoom, setGameState, clearGame, setDisconnectedPlayer, router]);
+  }, [
+    socket,
+    setRoom,
+    clearRoom,
+    setGameState,
+    clearGame,
+    setDisconnectedPlayer,
+    router,
+  ]);
 
   return { socket };
 }
