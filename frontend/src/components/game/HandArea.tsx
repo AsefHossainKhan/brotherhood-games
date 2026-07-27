@@ -234,13 +234,16 @@ export function HandArea({ cards }: HandAreaProps) {
     useGame();
   const canPlay = isMyTurn && phase === "PLAYING";
 
-  // When I hold no card of the led suit and the trump is still hidden, playing
-  // any card automatically reveals the trump — there is no separate reveal step.
-  const autoRevealOnPlay =
+  // I hold no card of the led suit and the trump is still hidden. I may choose
+  // to reveal the trump (which then obliges me to play trump this turn) or keep
+  // it hidden and play any card. Reveal is an explicit action — never automatic.
+  const canRevealTrump =
+    canPlay &&
     !!leadSuit &&
     !cards.some((c) => c.suit === leadSuit) &&
     !trump.isRevealed &&
-    !!trump.type;
+    !!trump.type &&
+    trump.type !== "joker";
 
   const scale = useUiScale();
   const cardH = Math.round(92 * scale);
@@ -286,13 +289,11 @@ export function HandArea({ cards }: HandAreaProps) {
     (cardId: string) => {
       const serverIndex = cards.findIndex((c) => idOf(c) === cardId);
       if (serverIndex !== -1) {
-        // Void in the led suit with a hidden trump → reveal it as we play.
-        if (autoRevealOnPlay) requestTrumpReveal();
         playCard(serverIndex);
       }
       setSelectedId(null);
     },
-    [cards, playCard, requestTrumpReveal, autoRevealOnPlay],
+    [cards, playCard],
   );
 
   const handleCardClick = useCallback(
@@ -368,6 +369,26 @@ export function HandArea({ cards }: HandAreaProps) {
               ? "Release over the table to play"
               : "Drag \u2191 to play \u00b7 drag \u2194 to reorder \u00b7 or tap twice"}
           </span>
+        </div>
+      )}
+      {/* Void in the led suit with a hidden trump → offer an explicit reveal.
+          Revealing obliges the player to play a trump card this turn. */}
+      {canRevealTrump && (
+        <div
+          data-testid="trump-reveal-panel"
+          className="mb-1 flex items-center justify-center gap-2 text-[11px]"
+        >
+          <span className="text-amber-200/80">
+            No card of the led suit — reveal trump or play any card
+          </span>
+          <button
+            type="button"
+            onClick={requestTrumpReveal}
+            data-testid="reveal-trump-btn"
+            className="rounded-full border border-amber-400/60 bg-amber-500/20 px-3 py-0.5 font-bold text-amber-200 shadow transition-colors hover:bg-amber-500/35"
+          >
+            Reveal Trump
+          </button>
         </div>
       )}
       <DndContext

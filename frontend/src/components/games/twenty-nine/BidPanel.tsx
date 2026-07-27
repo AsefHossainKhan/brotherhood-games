@@ -1,37 +1,32 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useGame } from "@/hooks/useGame";
 import { Button } from "@/components/common/Button";
+
+const OPEN_BID = 16;
+const MAX_BID = 28;
 
 export function BidPanel() {
   const { bidding, placeBid, passBid, callBid, myPlayer, isMyTurn, players } =
     useGame();
-  const [bidValue, setBidValue] = useState(
-    bidding.currentBid ? bidding.currentBid + 1 : 16,
-  );
-
-  const minBid = bidding.currentBid ? bidding.currentBid + 1 : 16;
-  const maxBid = 28;
 
   const isChallenger = bidding.currentChallenger === myPlayer?.id;
   const isHighestBidder = bidding.highestBidder === myPlayer?.id;
   const hasNoBidYet = !bidding.highestBidder;
 
-  // This player's own most recent numeric bid, used to block calling the same
-  // value repeatedly (you may only call a bid higher than one you already made).
-  const myLastBid =
-    [...bidding.bids]
-      .reverse()
-      .find((b) => b.playerId === myPlayer?.id && b.bid != null)?.bid ?? null;
+  // Opening bid: the first bidder opens at the minimum.
+  const canOpen = isMyTurn && hasNoBidYet;
 
-  const canBid = isMyTurn && (isChallenger || hasNoBidYet);
-  const canCall =
+  // Response actions: Call raises by +1, Raise raises by +2. Both take the lead.
+  const callValue = (bidding.currentBid ?? 0) + 1;
+  const raiseValue = (bidding.currentBid ?? 0) + 2;
+  const canRespond =
     isMyTurn &&
     !hasNoBidYet &&
-    !isHighestBidder &&
     bidding.currentBid !== null &&
-    (myLastBid === null || myLastBid < bidding.currentBid);
+    !isHighestBidder;
+  const canCall = canRespond && callValue <= MAX_BID;
+  const canRaise = canRespond && raiseValue <= MAX_BID;
   const canPass = isMyTurn && (isChallenger || isHighestBidder);
 
   // Work out who this player is bidding against, so the duel is legible.
@@ -42,15 +37,6 @@ export function BidPanel() {
     : isHighestBidder
       ? nameOf(bidding.currentChallenger)
       : nameOf(bidding.highestBidder);
-
-  // Keep the selected bid at or above the current minimum when the bid changes.
-  useEffect(() => {
-    setBidValue((v) =>
-      bidding.currentBid && v <= bidding.currentBid
-        ? bidding.currentBid + 1
-        : v,
-    );
-  }, [bidding.currentBid]);
 
   return (
     <div
@@ -91,7 +77,7 @@ export function BidPanel() {
       <div className="mb-3 text-center">
         {hasNoBidYet ? (
           <span className="text-xs text-white/40">
-            Open the bidding (min: {minBid})
+            Open the bidding (min: {OPEN_BID})
           </span>
         ) : isChallenger && isMyTurn ? (
           <span className="text-xs text-green-400">Your turn to respond</span>
@@ -108,24 +94,6 @@ export function BidPanel() {
         )}
       </div>
 
-      {canBid && (
-        <div className="mb-4">
-          <input
-            type="range"
-            min={minBid}
-            max={maxBid}
-            value={bidValue}
-            onChange={(e) => setBidValue(parseInt(e.target.value))}
-            className="w-full accent-yellow-500"
-          />
-          <div className="mt-1 flex justify-between text-xs text-white/40">
-            <span>{minBid}</span>
-            <span className="text-lg font-bold text-white">{bidValue}</span>
-            <span>{maxBid}</span>
-          </div>
-        </div>
-      )}
-
       <div className="flex gap-2">
         <Button
           onClick={passBid}
@@ -137,25 +105,38 @@ export function BidPanel() {
           Pass
         </Button>
 
-        {canCall && (
+        {canOpen && (
           <Button
-            onClick={callBid}
-            data-testid="call-bid-btn"
-            variant="blue"
-            className="flex-1"
-          >
-            Call ({bidding.currentBid})
-          </Button>
-        )}
-
-        {canBid && (
-          <Button
-            onClick={() => placeBid(bidValue)}
+            onClick={() => placeBid(OPEN_BID)}
             data-testid="place-bid-btn"
             variant="yellow"
             className="flex-1"
           >
-            {hasNoBidYet ? `Bid ${bidValue}` : `Raise to ${bidValue}`}
+            Bid {OPEN_BID}
+          </Button>
+        )}
+
+        {canRespond && (
+          <Button
+            onClick={callBid}
+            data-testid="call-bid-btn"
+            disabled={!canCall}
+            variant="blue"
+            className="flex-1"
+          >
+            Call ({callValue})
+          </Button>
+        )}
+
+        {canRespond && (
+          <Button
+            onClick={() => placeBid(raiseValue)}
+            data-testid="place-bid-btn"
+            disabled={!canRaise}
+            variant="yellow"
+            className="flex-1"
+          >
+            Raise ({raiseValue})
           </Button>
         )}
       </div>

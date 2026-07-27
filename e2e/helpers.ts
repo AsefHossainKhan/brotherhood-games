@@ -221,13 +221,9 @@ export async function executeBidAction(player: PlayerContext, action: BidAction)
   await page.waitForTimeout(300);
 
   if (action.type === 'bid') {
-    // Adjust slider to desired value
-    const slider = page.locator('input[type="range"]');
-    if (await slider.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await slider.fill(String(action.value));
-      await page.waitForTimeout(100);
-    }
-    // Click the bid/raise button — Playwright waits for it to be actionable
+    // Opening bid and raises are now fixed-increment buttons (no slider):
+    // opening = "Bid 16", raise = "+2". Click the bid/raise button — Playwright
+    // waits for it to be actionable. The numeric `value` is advisory only.
     await page.getByTestId('place-bid-btn').click({ timeout: 5_000 });
   } else if (action.type === 'pass') {
     await page.getByTestId('pass-bid-btn').click({ timeout: 5_000 });

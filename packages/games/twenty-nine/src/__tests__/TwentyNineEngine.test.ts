@@ -483,7 +483,7 @@ describe("TwentyNineEngine — Full Game Flow", () => {
       }
     });
 
-    it("call forces challenger to raise higher", () => {
+    it("call raises by +1 and forces challenger to raise higher", () => {
       const firstBidder = PLAYER_IDS[postDealState.currentTurn];
       let s = engine.handleAction(
         postDealState,
@@ -496,19 +496,21 @@ describe("TwentyNineEngine — Full Game Flow", () => {
         action("PLACE_BID", challengerId, { bid: 18 }),
       ).newState;
 
-      // Now firstBidder calls (matches 18)
+      // Now firstBidder calls: raises 18 → 19 and takes the lead
       s = engine.handleAction(s, action("CALL_BID", firstBidder)).newState;
+      expect(s.bidding.currentBid).toBe(19);
+      expect(s.bidding.highestBidder).toBe(firstBidder);
 
-      // Challenger must raise higher than 18
+      // Challenger must raise higher than 19
       const validation = engine.validateAction(
         s,
-        action("PLACE_BID", challengerId, { bid: 18 }),
+        action("PLACE_BID", challengerId, { bid: 19 }),
       );
-      expect(validation.valid).toBe(false); // Must be > 18
+      expect(validation.valid).toBe(false); // Must be > 19
 
       const validation2 = engine.validateAction(
         s,
-        action("PLACE_BID", challengerId, { bid: 19 }),
+        action("PLACE_BID", challengerId, { bid: 20 }),
       );
       expect(validation2.valid).toBe(true);
     });
@@ -532,7 +534,7 @@ describe("TwentyNineEngine — Full Game Flow", () => {
       expect(PLAYER_IDS[s.currentTurn]).toBe(firstBidder);
     });
 
-    it("challenger can call to match, but the holder cannot call again", () => {
+    it("challenger can call to raise by +1, but the holder cannot call off-turn", () => {
       const firstBidder = PLAYER_IDS[postDealState.currentTurn];
       let s = engine.handleAction(
         postDealState,
@@ -541,14 +543,15 @@ describe("TwentyNineEngine — Full Game Flow", () => {
 
       const challengerId = s.bidding.currentChallenger!;
 
-      // The challenger (whose turn it is) can call to match the opening bid.
+      // The challenger (whose turn it is) can call to raise the opening bid +1.
       expect(
         engine.validateAction(s, action("CALL_BID", challengerId)).valid,
       ).toBe(true);
 
       s = engine.handleAction(s, action("CALL_BID", challengerId)).newState;
 
-      // The challenger now holds the bid; the turn passes back to the opener.
+      // The challenger now holds the bid at 17; the turn passes to the opener.
+      expect(s.bidding.currentBid).toBe(17);
       expect(s.bidding.highestBidder).toBe(challengerId);
       expect(s.bidding.currentChallenger).toBe(firstBidder);
       expect(PLAYER_IDS[s.currentTurn]).toBe(firstBidder);
@@ -558,12 +561,12 @@ describe("TwentyNineEngine — Full Game Flow", () => {
         engine.validateAction(s, action("CALL_BID", challengerId)).valid,
       ).toBe(false);
 
-      // The opener cannot call the same value again — they must raise higher.
+      // The opener is now on turn and can call (17 → 18) or raise higher.
       expect(
         engine.validateAction(s, action("CALL_BID", firstBidder)).valid,
-      ).toBe(false);
+      ).toBe(true);
       expect(
-        engine.validateAction(s, action("PLACE_BID", firstBidder, { bid: 17 }))
+        engine.validateAction(s, action("PLACE_BID", firstBidder, { bid: 19 }))
           .valid,
       ).toBe(true);
     });

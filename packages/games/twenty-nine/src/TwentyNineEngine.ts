@@ -661,8 +661,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     playerId: string,
     broadcasts: Broadcast[],
   ): ActionResult<TwentyNineState> {
-    // Call is the responder matching the current bid to take the lead, forcing
-    // the previous highest bidder to raise strictly higher or pass.
+    // Call raises the current bid by exactly +1 and takes the lead, forcing the
+    // previous highest bidder to respond (call/raise higher or pass).
     const currentBid = state.bidding.currentBid;
     if (currentBid === null) {
       return {
@@ -686,10 +686,25 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       };
     }
 
-    // The caller matches the current bid and takes the lead. The player who
-    // previously held the bid becomes the new challenger and must respond.
+    const newBid = currentBid + 1;
+    if (newBid > TWENTY_NINE_DEFAULTS.maxBid) {
+      return {
+        newState: state,
+        broadcasts,
+        errors: [
+          {
+            code: "INVALID_BID",
+            message: `Cannot call above ${TWENTY_NINE_DEFAULTS.maxBid}`,
+          },
+        ],
+      };
+    }
+
+    // The caller raises to newBid and takes the lead. The player who previously
+    // held the bid becomes the new challenger and must respond.
     const previousHighestBidder = state.bidding.highestBidder;
-    state.bidding.bids.push({ playerId, bid: currentBid });
+    state.bidding.bids.push({ playerId, bid: newBid });
+    state.bidding.currentBid = newBid;
     state.bidding.highestBidder = playerId;
     state.bidding.currentChallenger = previousHighestBidder;
 
@@ -698,7 +713,7 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       payload: {
         playerId,
         action: "call",
-        currentBid,
+        currentBid: newBid,
         highestBidder: playerId,
         currentChallenger: previousHighestBidder,
         activeBidders: state.bidding.activeBidders,
@@ -1673,15 +1688,11 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     // The current highest bidder cannot call their own bid
     if (playerId === state.bidding.highestBidder)
       return { valid: false, error: "You already hold the bid" };
-    // Anti-loop: you may only call a bid that is strictly higher than your own
-    // most recent bid, so two players cannot call the same value back and forth.
-    const myLastBid = [...state.bidding.bids]
-      .reverse()
-      .find((b) => b.playerId === playerId && b.bid !== null)?.bid;
-    if (myLastBid != null && state.bidding.currentBid <= myLastBid)
+    // Call raises by +1 — cannot exceed the maximum bid.
+    if (state.bidding.currentBid + 1 > TWENTY_NINE_DEFAULTS.maxBid)
       return {
         valid: false,
-        error: "You must raise higher than the called bid",
+        error: `Cannot call above ${TWENTY_NINE_DEFAULTS.maxBid}`,
       };
     return { valid: true };
   }

@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import { useGame } from "@/hooks/useGame";
 import { useSocket } from "@/hooks/useSocket";
 import { PlayerSeat } from "./PlayerSeat";
@@ -30,44 +29,9 @@ export function GameBoard() {
     weakHandPlayer,
     currentTurn,
     biddingResult,
-    leadSuit,
-    trump,
-    requestTrumpReveal,
   } = useGame();
 
   useSocket();
-
-  // When it's my turn and I hold no card of the led suit, the trump has to be
-  // revealed before I can sensibly play. Reveal it automatically so I can see
-  // what the trump is (and why) instead of having to choose a card blindly.
-  const revealRequestedRef = useRef(false);
-  useEffect(() => {
-    const iAmVoidInLead =
-      !!leadSuit &&
-      !(myPlayer?.hand ?? []).some(
-        (c: { suit: string }) => c.suit === leadSuit,
-      );
-    const needsReveal =
-      phase === "PLAYING" &&
-      isMyTurn &&
-      iAmVoidInLead &&
-      !trump.isRevealed &&
-      !!trump.type;
-    if (needsReveal && !revealRequestedRef.current) {
-      revealRequestedRef.current = true;
-      requestTrumpReveal();
-    } else if (!needsReveal) {
-      revealRequestedRef.current = false;
-    }
-  }, [
-    phase,
-    isMyTurn,
-    leadSuit,
-    myPlayer,
-    trump.isRevealed,
-    trump.type,
-    requestTrumpReveal,
-  ]);
 
   const showWeakHandPanel = weakHandPlayer === myPlayer?.id;
   const showBidPanel = phase === "BIDDING" && isMyTurn;
