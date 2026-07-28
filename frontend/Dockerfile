@@ -30,9 +30,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 appuser
 
-COPY --from=builder /app/frontend/public ./public
+COPY --from=builder /app/frontend/public ./frontend/public
 COPY --from=builder --chown=appuser:nodejs /app/frontend/.next/standalone ./
-COPY --from=builder --chown=appuser:nodejs /app/frontend/.next/static ./.next/static
+COPY --from=builder --chown=appuser:nodejs /app/frontend/.next/static ./frontend/.next/static
 
 USER appuser
 
