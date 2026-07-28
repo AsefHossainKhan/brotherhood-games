@@ -223,6 +223,7 @@ All variables live in the root `.env` file:
 | `MYSQL_ROOT_PASSWORD` | Docker Compose | MySQL root password |
 | `MYSQL_USER` | Docker Compose | MySQL user |
 | `MYSQL_PASSWORD` | Docker Compose | MySQL password |
+| `MYSQL_PORT` | Docker Compose | MySQL host port (container port remains 3306) |
 
 > **Note:** `NEXT_PUBLIC_*` variables are embedded into the frontend bundle at build time. They cannot be changed at runtime. For Docker, they are passed as build args in `docker-compose.yml`.
 

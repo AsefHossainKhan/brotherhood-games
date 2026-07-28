@@ -47,7 +47,9 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     const existing = get().socket;
     if (existing?.connected) return;
 
-    const socket = io(process.env.NEXT_PUBLIC_WS_URL ?? 'http://localhost:3001', {
+    const socketUrl = process.env.NEXT_PUBLIC_WS_URL ||
+      (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
+    const socket = io(socketUrl, {
       auth: { guestId, username },
       reconnection: true,
       reconnectionAttempts: 10,

@@ -7,9 +7,21 @@ import { healthRouter } from './routes/health';
 
 const app = express();
 const httpServer = createServer(app);
+const allowedOrigins = config.corsOrigin
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 // Middleware
-app.use(cors({ origin: config.corsOrigin }));
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error('Origin is not allowed by CORS'));
+  },
+}));
 app.use(express.json());
 
 // Routes
