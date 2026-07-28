@@ -60,6 +60,10 @@ export const useSocketStore = create<SocketState>((set, get) => ({
       set({ isConnected: true });
     });
 
+    socket.on('SERVER_CONFIG', (data: { allowBots?: boolean }) => {
+      set({ allowBots: !!data?.allowBots });
+    });
+
     socket.on('disconnect', () => {
       set({ isConnected: false });
     });

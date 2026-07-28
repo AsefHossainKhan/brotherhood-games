@@ -23,11 +23,6 @@ export function useSocket() {
   useEffect(() => {
     if (!socket || listenersAttached.current) return;
 
-    // ---- Server capabilities ----
-    socket.on("SERVER_CONFIG", (data) => {
-      useSocketStore.getState().setAllowBots(!!data?.allowBots);
-    });
-
     // ---- Room Events ----
     socket.on("ROOM_UPDATED", (data) => {
       setRoom(data.room);
