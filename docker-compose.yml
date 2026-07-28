@@ -12,6 +12,7 @@ services:
       # The host port is configurable, but the container listens on 3001.
       - BACKEND_PORT=3001
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost}
+      - ALLOW_BOTS=${ALLOW_BOTS:-false}
       - NODE_ENV=production
     depends_on:
       db:
