@@ -34,6 +34,8 @@ services:
       - brotherhood
 
   nginx:
+    profiles:
+      - internal-proxy
     image: nginx:alpine
     container_name: brotherhood-nginx
     restart: unless-stopped
