@@ -1,6 +1,6 @@
 import { Server, Socket } from 'socket.io';
 import { GameRuntime } from '@brotherhood/game-engine';
-import { config } from '../../config';
+import { config } from '../../config.js';
 
 /**
  * Handle room-related socket events:

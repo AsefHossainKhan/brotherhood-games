@@ -1,9 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
-import { config } from './config';
-import { setupSocketManager } from './socket/SocketManager';
-import { healthRouter } from './routes/health';
+import { config } from './config.js';
+import { setupSocketManager } from './socket/SocketManager.js';
+import { healthRouter } from './routes/health.js';
 
 const app = express();
 const httpServer = createServer(app);

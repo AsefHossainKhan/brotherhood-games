@@ -1,12 +1,12 @@
 import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
-import { config } from '../config';
+import { config } from '../config.js';
 import { GameRuntime, RuntimeEmitter } from '@brotherhood/game-engine';
 import { GameRegistry } from '@brotherhood/game-engine';
 import { TwentyNineEngine } from '@brotherhood/twenty-nine';
-import { handleRoomEvents } from './handlers/roomHandlers';
-import { handleGameEvents } from './handlers/gameHandlers';
-import { handleConnectionEvents } from './handlers/connectionHandlers';
+import { handleRoomEvents } from './handlers/roomHandlers.js';
+import { handleGameEvents } from './handlers/gameHandlers.js';
+import { handleConnectionEvents } from './handlers/connectionHandlers.js';
 
 /** Socket.IO emitter adapter for the GameRuntime */
 const createEmitter = (io: Server): RuntimeEmitter => ({
@@ -27,9 +27,14 @@ const createEmitter = (io: Server): RuntimeEmitter => ({
 });
 
 export function setupSocketManager(httpServer: HttpServer): Server {
+  const allowedOrigins = config.corsOrigin
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
   const io = new Server(httpServer, {
     cors: {
-      origin: config.corsOrigin,
+      origin: allowedOrigins,
       methods: ['GET', 'POST'],
     },
     pingTimeout: 10000,
