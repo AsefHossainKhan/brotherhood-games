@@ -47,6 +47,11 @@ Server is responsible for:
 ### Identity Model
 Guest and registered users should share a common abstraction.
 
+A guest holds a secret guestToken, sent only in the socket handshake. The
+server derives the guest's public player id from it by a one-way hash, and
+only the public id is ever shown to other clients. See the WebSocket
+protocol's Connection Handshake.
+
 ## Spectators
 
 Room
@@ -72,6 +77,11 @@ Failure to reconnect within 5 minutes:
 - Team forfeits
 - Match ends
 - Room cleaned up
+
+A forfeit only applies to a match still being played:
+- When a match ends normally, every reservation for that room is cleared
+- A reservation that expires after its room has finished, or been removed, does nothing
+- A forfeit never replaces a normal result
 
 ## Game Engine Architecture
 
