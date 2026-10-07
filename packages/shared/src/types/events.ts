@@ -19,6 +19,7 @@ export interface ClientEvents {
   SELECT_TRUMP: { suit: string };
   SELECT_SEVENTH_CARD_TRUMP: Record<string, never>;
   SELECT_JOKER: Record<string, never>;
+  DECLARE_SINGLE: Record<string, never>;
   DECLARE_DOUBLE: Record<string, never>;
   DECLARE_REDOUBLE: Record<string, never>;
   DECLARE_FULLSET: Record<string, never>;
@@ -61,6 +62,7 @@ export interface ServerEvents {
   TRUMP_SELECTED: { type: 'suit' | 'seventh-card' | 'joker'; suit?: string };
   TRUMP_REVEALED: { suit: string; playerId: string };
   MARRIAGE_DECLARED: { playerId: string; suit: string; effectiveBid: number };
+  SINGLE_DECLARED: { declarerId: string; partnerId: string };
 
   // Play
   CARD_PLAYED: { playerId: string; cardId: string };

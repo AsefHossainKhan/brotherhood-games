@@ -101,6 +101,7 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       currentTurn: -1,
       leadSuit: null,
       marriage: null,
+      single: null,
       score: {
         teamPoints: [0, 0],
         matchPoints: [0, 0],
@@ -163,6 +164,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
         );
       case "SELECT_JOKER":
         return this.handleSelectJoker(newState, action.playerId, broadcasts);
+      case "DECLARE_SINGLE":
+        return this.handleDeclareSingle(newState, action.playerId, broadcasts);
       case "DECLARE_DOUBLE":
         return this.handleDeclareDouble(
           newState,
@@ -236,6 +239,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       case "SELECT_SEVENTH_CARD_TRUMP":
       case "SELECT_JOKER":
         return this.validateTrumpSelection(state, action.playerId);
+      case "DECLARE_SINGLE":
+        return this.validateDeclareSingle(state, action.playerId);
       case "DECLARE_DOUBLE":
       case "DECLARE_REDOUBLE":
       case "DECLARE_FULLSET":
@@ -322,6 +327,7 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       currentTurn: state.currentTurn,
       leadSuit: state.leadSuit,
       marriage: state.marriage,
+      single: state.single,
       score: state.score,
       weakHandPlayer: state.weakHandPlayer,
       settings: state.settings,
@@ -890,6 +896,66 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     return this.proceedToSecondDeal(state, broadcasts);
   }
 
+  // SPEC: spec-d7d1f5 — Single: once all 8 cards are dealt, during the double
+  // phase, the declarer may play alone, with no trump, marriage or doubling,
+  // for all 8 tricks.
+  private handleDeclareSingle(
+    state: TwentyNineState,
+    playerId: string,
+    broadcasts: Broadcast[],
+  ): ActionResult<TwentyNineState> {
+    const declarer = state.players.find((p) => p.id === playerId);
+    const partner = state.players.find(
+      (p) => p.team === declarer?.team && p.id !== playerId,
+    );
+    if (!declarer || !partner) {
+      return {
+        newState: state,
+        broadcasts,
+        errors: [{ code: "PLAYER_NOT_FOUND", message: "Player not found" }],
+      };
+    }
+
+    // A seventh-card trump was set aside from the declarer's hand: it comes
+    // back, since a Single is played with all 8 cards and no trump.
+    const seventhCard = state.trump.seventhCard;
+    if (
+      state.trump.type === "seventh-card" &&
+      seventhCard &&
+      !declarer.hand.some(
+        (c) => c.suit === seventhCard.suit && c.rank === seventhCard.rank,
+      )
+    ) {
+      declarer.hand.push(seventhCard);
+    }
+
+    // No trump: type is null so a reveal is refused ("No trump to reveal").
+    state.trump = {
+      type: null,
+      suit: null,
+      isRevealed: false,
+      seventhCard: null,
+      revealedBy: null,
+      mustPlayTrump: false,
+    };
+    // No marriage, and any double already called no longer applies.
+    state.marriage = null;
+    state.double = { level: "normal", calledBy: null, multiplier: 1 };
+    state._doublePasses = [];
+
+    // The partner folds their whole hand face down.
+    partner.hand = [];
+    state.single = { declarerId: declarer.id, partnerId: partner.id };
+
+    broadcasts.push({
+      event: "SINGLE_DECLARED",
+      payload: { declarerId: declarer.id, partnerId: partner.id },
+    });
+
+    // The Single caller leads at once.
+    return this.startPlaying(state, broadcasts);
+  }
+
   private proceedToSecondDeal(
     state: TwentyNineState,
     broadcasts: Broadcast[],
@@ -1215,13 +1281,13 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       payload: { playerId, cardId: `${card.suit}_${card.rank}` },
     });
 
-    // Check if trick is complete (4 cards played)
-    if (state.currentTrick.plays.length === 4) {
+    // Check if trick is complete (4 cards played, 3 in a Single)
+    if (state.currentTrick.plays.length === this.playersInTrick(state)) {
       return this.resolveCurrentTrick(state, broadcasts);
     }
 
     // Move to next player
-    state.currentTurn = (state.currentTurn + 1) % 4;
+    state.currentTurn = this.nextPlayingSeat(state, state.currentTurn);
 
     return { newState: state, broadcasts };
   }
@@ -1256,6 +1322,11 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
 
     // Check if all tricks are played
     if (state.completedTricks.length >= TWENTY_NINE_DEFAULTS.totalTricks) {
+      return this.finishGame(state, broadcasts);
+    }
+
+    // Single: the hand is lost the moment the declarer loses a trick.
+    if (state.single && winnerId !== state.single.declarerId) {
       return this.finishGame(state, broadcasts);
     }
 
@@ -1377,6 +1448,10 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
   ): ActionResult<TwentyNineState> {
     state.phase = GAME_PHASES.SCORING;
 
+    if (state.single) {
+      return this.finishSingle(state, broadcasts);
+    }
+
     // Check if hidden trump was never revealed
     if (
       shouldCancelForHiddenTrump(
@@ -1435,6 +1510,69 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     // Calculate bonus points (all tricks, zero tricks)
     const bonusPoints = calculateBonusPoints(tricksWonPerTeam, declarer.team);
 
+    return this.applyHandResult(
+      state,
+      broadcasts,
+      teamPoints,
+      matchPointsResult,
+      bonusPoints,
+      bidSuccess,
+      effectiveBid,
+    );
+  }
+
+  // SPEC: spec-d7d1f5 — a Single scores +3 when the declarer takes all 8
+  // tricks and -3 otherwise; no bid target, multiplier or trick bonus applies.
+  private finishSingle(
+    state: TwentyNineState,
+    broadcasts: Broadcast[],
+  ): ActionResult<TwentyNineState> {
+    const single = state.single!;
+    const declarer = state.players.find((p) => p.id === single.declarerId)!;
+
+    const teams = new Map<string, 0 | 1>();
+    for (const player of state.players) {
+      teams.set(player.id, player.team);
+    }
+    const teamPoints = calculateTeamPoints(
+      state.completedTricks.filter((t) => t.winnerId !== null) as {
+        plays: { playerId: string; card: { suit: string; rank: string } }[];
+        winnerId: string;
+      }[],
+      teams,
+    );
+
+    const success =
+      state.completedTricks.length === TWENTY_NINE_DEFAULTS.totalTricks &&
+      state.completedTricks.every((t) => t.winnerId === single.declarerId);
+
+    const matchPointsResult: [number, number] = [0, 0];
+    matchPointsResult[declarer.team] = success
+      ? TWENTY_NINE_DEFAULTS.singleMatchPoints
+      : -TWENTY_NINE_DEFAULTS.singleMatchPoints;
+
+    return this.applyHandResult(
+      state,
+      broadcasts,
+      teamPoints,
+      matchPointsResult,
+      [0, 0],
+      success,
+      null,
+    );
+  }
+
+  private applyHandResult(
+    state: TwentyNineState,
+    broadcasts: Broadcast[],
+    teamPoints: [number, number],
+    matchPointsResult: [number, number],
+    bonusPoints: [number, number],
+    bidSuccess: boolean,
+    effectiveBid: number | null,
+  ): ActionResult<TwentyNineState> {
+    const declarer = state.players.find((p) => p.isDeclarer)!;
+
     // Update score with set completion check
     state.score = updateScore(
       state.score,
@@ -1458,6 +1596,7 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
         declarerTeam: declarer.team,
         bonusPoints,
         effectiveBid,
+        single: state.single !== null,
       },
     });
 
@@ -1549,6 +1688,9 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
 
     // Reset marriage
     state.marriage = null;
+
+    // Reset Single
+    state.single = null;
 
     // Reset weak hand
     state.weakHandPlayer = null;
@@ -1709,6 +1851,20 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     return { valid: true };
   }
 
+  private validateDeclareSingle(
+    state: TwentyNineState,
+    playerId: string,
+  ): { valid: boolean; error?: string } {
+    // Not tied to the turn: the declarer may call Single at any point while
+    // doubles are being decided, once all 8 cards are in hand.
+    if (state.phase !== GAME_PHASES.DOUBLE_PHASE)
+      return { valid: false, error: "Single is declared in the double phase" };
+    const player = state.players.find((p) => p.id === playerId);
+    if (!player?.isDeclarer)
+      return { valid: false, error: "Only the declarer can declare Single" };
+    return { valid: true };
+  }
+
   private validateDouble(
     state: TwentyNineState,
     playerId: string,
@@ -1838,6 +1994,20 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       }
     }
     return null;
+  }
+
+  /** Cards in a full trick: 4, or 3 in a Single (the partner has folded). */
+  private playersInTrick(state: TwentyNineState): number {
+    return state.single ? 3 : 4;
+  }
+
+  /** Next seat to play, skipping a Single's folded partner. */
+  private nextPlayingSeat(state: TwentyNineState, fromSeat: number): number {
+    let seat = (fromSeat + 1) % 4;
+    if (state.single && state.players[seat].id === state.single.partnerId) {
+      seat = (seat + 1) % 4;
+    }
+    return seat;
   }
 
   private getNextOpponentSeat(

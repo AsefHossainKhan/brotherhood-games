@@ -41,6 +41,11 @@ export function useGame() {
     socket?.emit('SELECT_JOKER');
   };
 
+  // SPEC: spec-d7d1f5 — declare Single instead of choosing a trump
+  const declareSingle = () => {
+    socket?.emit('DECLARE_SINGLE');
+  };
+
   // Double phase
   const declareDouble = () => {
     socket?.emit('DECLARE_DOUBLE');
@@ -92,6 +97,7 @@ export function useGame() {
     selectTrump,
     selectSeventhCardTrump,
     selectJoker,
+    declareSingle,
     declareDouble,
     declareRedouble,
     declareFullset,

@@ -4,7 +4,8 @@ import { useGame } from "@/hooks/useGame";
 import { motion } from "framer-motion";
 
 export function ScoreBoard() {
-  const { score, double: doubleInfo, bidding, trump, marriage } = useGame();
+  const { score, double: doubleInfo, bidding, trump, marriage, single } =
+    useGame();
 
   return (
     <motion.div
@@ -82,6 +83,18 @@ export function ScoreBoard() {
           <span className="h-4 w-px bg-white/10" />
           <span className="text-sm font-bold text-orange-400">
             ×{doubleInfo.multiplier}
+          </span>
+        </>
+      )}
+
+      {single && (
+        <>
+          <span className="h-4 w-px bg-white/10" />
+          <span
+            data-testid="single-badge"
+            className="text-sm font-semibold text-sky-400"
+          >
+            ☝️ Single · no trump
           </span>
         </>
       )}

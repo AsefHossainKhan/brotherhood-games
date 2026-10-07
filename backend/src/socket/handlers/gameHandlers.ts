@@ -73,6 +73,7 @@ export function handleGameEvents(io: Server, socket: Socket, runtime: GameRuntim
   socket.on('SELECT_TRUMP', (data: { suit: string }) => handleAction('SELECT_TRUMP', { suit: data.suit }));
   socket.on('SELECT_SEVENTH_CARD_TRUMP', () => handleAction('SELECT_SEVENTH_CARD_TRUMP'));
   socket.on('SELECT_JOKER', () => handleAction('SELECT_JOKER'));
+  socket.on('DECLARE_SINGLE', () => handleAction('DECLARE_SINGLE')); // SPEC: spec-d7d1f5
 
   // Double phase
   socket.on('DECLARE_DOUBLE', () => handleAction('DECLARE_DOUBLE'));

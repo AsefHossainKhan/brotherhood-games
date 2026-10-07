@@ -12,4 +12,5 @@ export const TWENTY_NINE_DEFAULTS = {
   firstDealCount: 4,
   secondDealCount: 4,
   totalTricks: 8,
+  singleMatchPoints: 3, // ±3 for a Single (SPEC: spec-d7d1f5)
 } as const;
