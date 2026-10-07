@@ -109,10 +109,7 @@ export class GameRuntime {
     username: string,
     socketId: string,
   ): { room: Room; seat: number } {
-    const roomId = this.roomsByCode.get(roomCode.toUpperCase());
-    if (!roomId) throw new Error("Room not found");
-
-    const room = this.rooms.get(roomId);
+    const room = this.getRoomByCode(roomCode);
     if (!room) throw new Error("Room not found");
 
     // A seated player returning to a game in progress goes through
@@ -122,7 +119,7 @@ export class GameRuntime {
     if (room.hasUser(userId)) throw new Error("Already in room");
 
     const player = room.addPlayer(userId, username);
-    this.connections.set(userId, { socketId, userId, roomId: roomId });
+    this.connections.set(userId, { socketId, userId, roomId: room.id });
 
     return { room, seat: player.seat! };
   }
@@ -134,16 +131,13 @@ export class GameRuntime {
     username: string,
     socketId: string,
   ): Room {
-    const roomId = this.roomsByCode.get(roomCode.toUpperCase());
-    if (!roomId) throw new Error("Room not found");
-
-    const room = this.rooms.get(roomId);
+    const room = this.getRoomByCode(roomCode);
     if (!room) throw new Error("Room not found");
 
     if (room.hasUser(userId)) throw new Error("Already in room");
 
     room.addSpectator(userId, username);
-    this.connections.set(userId, { socketId, userId, roomId: roomId });
+    this.connections.set(userId, { socketId, userId, roomId: room.id });
 
     return room;
   }
@@ -417,14 +411,15 @@ export class GameRuntime {
    * SPEC: spec-95c801 — the client names its guestId and the roomCode; the
    * seat is restored only against a live reservation for that guest in that
    * room. The caller then sends the room (seat) and the visible state (hand).
+   * The roomCode arrives straight off the wire: anything that is not a
+   * string is an unknown room, never a throw.
    */
   handleReconnect(
     userId: string,
-    roomCode: string,
+    roomCode: unknown,
     socketId: string,
   ): ReconnectResult {
-    const roomId = this.roomsByCode.get(roomCode.toUpperCase());
-    const room = roomId ? this.rooms.get(roomId) : undefined;
+    const room = this.getRoomByCode(roomCode);
     if (!room) return { ok: false, reason: "ROOM_NOT_FOUND" };
 
     // A new socket can arrive before the server has noticed the old one drop
@@ -465,8 +460,12 @@ export class GameRuntime {
 
   // ---- Helpers ----
 
-  /** Get a room by code. */
-  getRoomByCode(code: string): Room | undefined {
+  /**
+   * Get a room by code, in any letter case. Codes come from client payloads,
+   * so a value that is not a string finds no room rather than throwing.
+   */
+  getRoomByCode(code: unknown): Room | undefined {
+    if (typeof code !== "string") return undefined;
     const roomId = this.roomsByCode.get(code.toUpperCase());
     return roomId ? this.rooms.get(roomId) : undefined;
   }

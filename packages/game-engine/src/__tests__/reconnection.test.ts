@@ -158,6 +158,19 @@ describe("GameRuntime reconnection and forfeit", () => {
     });
   });
 
+  it("reports a malformed room code as unknown instead of throwing", () => {
+    const room = startedGame(runtime);
+    runtime.handleDisconnect("s1");
+    for (const code of ["", 12345, undefined, null, {}, ["ABCD"]]) {
+      expect(runtime.handleReconnect("p1", code, "s1b")).toEqual({
+        ok: false,
+        reason: "ROOM_NOT_FOUND",
+      });
+    }
+    // The reservation survives the bad attempts and still redeems.
+    expect(runtime.handleReconnect("p1", room.code, "s1b").ok).toBe(true);
+  });
+
   it("a new socket supersedes a stale one the server has not seen drop", () => {
     const room = startedGame(runtime);
 
