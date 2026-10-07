@@ -3,7 +3,8 @@ import { RANK_ORDER_29 } from "@brotherhood/shared";
 
 /**
  * Select the trump suit normally.
- * The suit is immediately known to all players.
+ * Only the declarer is told the suit; other players learn only that a
+ * suit trump was chosen, until reveal.
  */
 export function selectSuitTrump(suit: Suit): { suit: Suit; isHidden: boolean } {
   return { suit, isHidden: false };
