@@ -10,8 +10,23 @@ export function DoublePanel() {
     declareRedouble,
     declareFullset,
     passDouble,
+    declareSingle,
     isMyTurn,
+    myPlayer,
   } = useGame();
+
+  // SPEC: spec-d7d1f5 — with all 8 cards in hand, the declarer may play
+  // Single at any point while doubles are decided, on their turn or not.
+  const singleButton = myPlayer?.isDeclarer && (
+    <Button
+      onClick={declareSingle}
+      data-testid="declare-single-btn"
+      variant="secondary"
+      className="border-sky-500/40 text-sky-400"
+    >
+      ☝️ Single — play alone for all 8 (±3)
+    </Button>
+  );
 
   if (!isMyTurn) {
     return (
@@ -26,6 +41,7 @@ export function DoublePanel() {
         <p className="text-center text-sm text-white/40">
           Waiting for other players...
         </p>
+        {singleButton && <div className="mt-3 flex flex-col">{singleButton}</div>}
       </div>
     );
   }
@@ -78,6 +94,8 @@ export function DoublePanel() {
         >
           Pass
         </Button>
+
+        {singleButton}
       </div>
     </div>
   );

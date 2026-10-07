@@ -238,6 +238,17 @@ Failure:
 
 Play starts from Single caller.
 
+When:
+Single is declared once all 8 cards are in hand, during the double phase
+(while double / re-double are being decided). Only the declarer may call it,
+at any point in that phase.
+Declaring Single cancels the chosen trump (a set-aside 7th card returns to the
+declarer's hand), any marriage, and any double already called; play starts at once.
+
+Tricks:
+Each trick has 3 cards; the folded partner is skipped.
+The hand ends as soon as the declarer loses a trick (-3).
+
 ## Disconnects
 
 Reconnect window:

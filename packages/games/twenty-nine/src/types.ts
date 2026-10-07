@@ -68,6 +68,14 @@ export interface MarriageInfo {
   playerId: string; // who declared the marriage
 }
 
+// ---- Single ----
+
+// SPEC: spec-d7d1f5 — the declarer plays alone; the partner's hand is folded.
+export interface SingleInfo {
+  declarerId: string;
+  partnerId: string;
+}
+
 // ---- Score ----
 
 export interface MatchScore {
@@ -108,6 +116,9 @@ export interface TwentyNineState {
 
   // Marriage
   marriage: MarriageInfo | null;
+
+  // Single declaration (null when the hand is played with a trump)
+  single: SingleInfo | null;
 
   // Scoring
   score: MatchScore;

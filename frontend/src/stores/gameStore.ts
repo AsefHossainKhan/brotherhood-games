@@ -60,6 +60,11 @@ interface DoubleState {
   multiplier: number;
 }
 
+interface SingleState {
+  declarerId: string;
+  partnerId: string;
+}
+
 interface DisconnectState {
   playerId: string;
   username: string;
@@ -89,6 +94,7 @@ interface GameState {
   currentTurn: number;
   leadSuit: string | null;
   marriage: any;
+  single: SingleState | null;
   score: ScoreState;
   weakHandPlayer: string | null;
   settings: any;
@@ -140,6 +146,7 @@ export const useGameStore = create<GameState>((set) => ({
   currentTurn: -1,
   leadSuit: null,
   marriage: null,
+  single: null,
   score: {
     teamPoints: [0, 0],
     matchPoints: [0, 0],
@@ -165,6 +172,7 @@ export const useGameStore = create<GameState>((set) => ({
       currentTurn: state.currentTurn,
       leadSuit: state.leadSuit,
       marriage: state.marriage,
+      single: state.single ?? null,
       score: state.score,
       weakHandPlayer: state.weakHandPlayer,
       settings: state.settings,
@@ -211,6 +219,7 @@ export const useGameStore = create<GameState>((set) => ({
       currentTurn: -1,
       leadSuit: null,
       marriage: null,
+      single: null,
       score: { teamPoints: [0, 0], matchPoints: [0, 0], sets: [0, 0], lastBidResult: null },
       weakHandPlayer: null,
       settings: null,
