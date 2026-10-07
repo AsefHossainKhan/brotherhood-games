@@ -41,6 +41,11 @@ interface DisconnectionReservation {
   timeout: NodeJS.Timeout;
 }
 
+/** Outcome of a reconnect attempt. */
+export type ReconnectResult =
+  | { ok: true; room: Room; seat: number; supersededSocketId?: string }
+  | { ok: false; reason: "ROOM_NOT_FOUND" | "NO_RESERVATION" };
+
 /** Delay between consecutive bot actions, for a natural pace of play. */
 const BOT_ACTION_DELAY_MS = 1000;
 
@@ -110,16 +115,9 @@ export class GameRuntime {
     const room = this.rooms.get(roomId);
     if (!room) throw new Error("Room not found");
 
+    // A seated player returning to a game in progress goes through
+    // handleReconnect, never through a join.
     if (room.status !== "waiting") throw new Error("Game already in progress");
-
-    // Check if this user was disconnected and has a reservation
-    const reservation = this.reservations.get(userId);
-    if (reservation && reservation.roomId === roomId) {
-      // Reconnect to existing seat
-      clearTimeout(reservation.timeout);
-      this.reservations.delete(userId);
-      return this.reconnectToRoom(room, userId, socketId);
-    }
 
     if (room.hasUser(userId)) throw new Error("Already in room");
 
@@ -158,15 +156,9 @@ export class GameRuntime {
     const room = this.rooms.get(conn.roomId);
     if (!room) return null;
 
-    // If game is in progress, treat leaving as forfeit
-    if (room.status === "playing") {
-      room.status = "finished";
-      this.emitter.emitToRoom(room.id, "GAME_FINISHED", {
-        winner: "forfeit",
-        reason: `Player left the game`,
-        forfeitedPlayerId: userId,
-      });
-      this.cleanupRoom(room.id);
+    // If a player leaves a game in progress, their team forfeits
+    if (room.status === "playing" && room.players.has(userId)) {
+      this.forfeitMatch(room, userId, "Player left the game");
       return { room, wasHost: false };
     }
 
@@ -375,8 +367,22 @@ export class GameRuntime {
     const room = this.rooms.get(conn.roomId);
     if (!room) return null;
 
-    // If game is in progress, create a reservation
+    // Spectators hold no seat: they simply leave, whatever the game status.
+    if (room.spectators.has(disconnectedUserId)) {
+      room.removeSpectator(disconnectedUserId);
+      this.connections.delete(disconnectedUserId);
+      this.emitter.emitToRoom(room.id, "SPECTATOR_LEFT", {
+        spectatorId: disconnectedUserId,
+      });
+      return { userId: disconnectedUserId, roomId: conn.roomId };
+    }
+
+    // SPEC: spec-bc6000 — a seated player who drops mid-game keeps the seat
+    // for RECONNECT_TIMEOUT_MS; when it lapses their team forfeits.
     if (room.status === "playing") {
+      const player = room.players.get(disconnectedUserId);
+      if (player) player.isConnected = false;
+
       const reservation: DisconnectionReservation = {
         userId: disconnectedUserId,
         roomId: conn.roomId,
@@ -405,36 +411,56 @@ export class GameRuntime {
     return { userId: disconnectedUserId, roomId: conn.roomId };
   }
 
-  /** Handle a player reconnecting. */
-  handleReconnect(userId: string, socketId: string): Room | null {
-    const reservation = this.reservations.get(userId);
-    if (!reservation) return null;
+  /**
+   * Handle a player reconnecting to a room.
+   *
+   * SPEC: spec-95c801 — the client names its guestId and the roomCode; the
+   * seat is restored only against a live reservation for that guest in that
+   * room. The caller then sends the room (seat) and the visible state (hand).
+   */
+  handleReconnect(
+    userId: string,
+    roomCode: string,
+    socketId: string,
+  ): ReconnectResult {
+    const roomId = this.roomsByCode.get(roomCode.toUpperCase());
+    const room = roomId ? this.rooms.get(roomId) : undefined;
+    if (!room) return { ok: false, reason: "ROOM_NOT_FOUND" };
 
-    const room = this.rooms.get(reservation.roomId);
-    if (!room) return null;
+    // A new socket can arrive before the server has noticed the old one drop
+    // (a page refresh, a network blip). Retire the stale socket first, which
+    // reserves the seat, then redeem that reservation like any other.
+    let supersededSocketId: string | undefined;
+    const conn = this.connections.get(userId);
+    if (
+      !this.reservations.has(userId) &&
+      conn &&
+      conn.roomId === room.id &&
+      conn.socketId !== socketId &&
+      room.status === "playing" &&
+      room.players.has(userId)
+    ) {
+      supersededSocketId = conn.socketId;
+      this.handleDisconnect(conn.socketId);
+    }
+
+    const reservation = this.reservations.get(userId);
+    const player = room.players.get(userId);
+    if (!reservation || reservation.roomId !== room.id || !player) {
+      return { ok: false, reason: "NO_RESERVATION" };
+    }
 
     clearTimeout(reservation.timeout);
     this.reservations.delete(userId);
 
-    // Update connection
-    this.connections.set(userId, {
-      socketId,
-      userId,
-      roomId: reservation.roomId,
-    });
+    this.connections.set(userId, { socketId, userId, roomId: room.id });
+    player.isConnected = true;
 
-    // Mark player as connected on the Room object
-    const player = room.players.get(userId);
-    if (player) {
-      player.isConnected = true;
-    }
-
-    // Notify the room
     this.emitter.emitToRoom(room.id, "PLAYER_RECONNECTED", {
       playerId: userId,
     });
 
-    return room;
+    return { ok: true, room, seat: player.seat!, supersededSocketId };
   }
 
   // ---- Helpers ----
@@ -561,21 +587,6 @@ export class GameRuntime {
     }
   }
 
-  /** Reconnect a user to their existing seat. */
-  private reconnectToRoom(
-    room: Room,
-    userId: string,
-    socketId: string,
-  ): { room: Room; seat: number } {
-    const player = room.players.get(userId);
-    if (!player) throw new Error("Player not found in room");
-
-    player.isConnected = true;
-    this.connections.set(userId, { socketId, userId, roomId: room.id });
-
-    return { room, seat: player.seat! };
-  }
-
   /** Handle reconnect timeout (forfeit). */
   private handleReconnectTimeout(userId: string): void {
     const reservation = this.reservations.get(userId);
@@ -586,21 +597,30 @@ export class GameRuntime {
     const room = this.rooms.get(reservation.roomId);
     if (!room) return;
 
-    const player = room.players.get(userId);
-    const username = player?.username ?? "Unknown player";
+    const username = room.players.get(userId)?.username ?? "Unknown player";
+    this.forfeitMatch(room, userId, `${username} failed to reconnect`);
+  }
 
-    // Notify room of forfeit
-    this.emitter.emitToRoom(room.id, "GAME_FINISHED", {
-      winner: "forfeit",
-      reason: `${username} failed to reconnect`,
-      forfeitedPlayerId: userId,
-    });
+  /**
+   * SPEC: spec-bc6000 — the player's team forfeits, the match ends and the
+   * room is cleaned up.
+   */
+  private forfeitMatch(room: Room, userId: string, reason: string): void {
+    const forfeitedTeam = room.players.get(userId)?.team ?? null;
 
     room.status = "finished";
+    this.emitter.emitToRoom(room.id, "GAME_FINISHED", {
+      winner: "forfeit",
+      reason,
+      forfeitedPlayerId: userId,
+      forfeitedTeam,
+      winningTeam: forfeitedTeam === null ? null : 1 - forfeitedTeam,
+    });
+
     this.cleanupRoom(room.id);
   }
 
-  /** Clean up a room. */
+  /** Clean up a room: its reservations, connections and lookups. */
   private cleanupRoom(roomId: string): void {
     const room = this.rooms.get(roomId);
     if (!room) return;
@@ -611,6 +631,11 @@ export class GameRuntime {
         clearTimeout(reservation.timeout);
         this.reservations.delete(userId);
       }
+    }
+
+    // Nobody is in a room that no longer exists
+    for (const [userId, conn] of this.connections.entries()) {
+      if (conn.roomId === roomId) this.connections.delete(userId);
     }
 
     this.roomsByCode.delete(room.code);

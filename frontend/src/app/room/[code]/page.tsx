@@ -37,16 +37,28 @@ export default function RoomPage() {
   // Socket listeners
   useSocket();
 
-  // If not in this room, try to join (only on first arrival via a direct URL,
-  // never when we've just left the room).
+  // SPEC: spec-95c801 — on every (re)connect, first try to reclaim a seat
+  // reserved for this guest in this room; join afresh only if there is none.
+  // Never pull the player back into a room they have just left.
   useEffect(() => {
     if (!mounted || !isConnected) return;
-    if (!roomId && !wasInRoomRef.current) {
-      // We're not in a room — try to join this one
-      const socket = useSocketStore.getState().socket;
-      socket?.emit("JOIN_ROOM", { roomCode: roomCode.toUpperCase() });
-    }
-  }, [mounted, isConnected, roomId, roomCode]);
+    if (!useRoomStore.getState().roomId && wasInRoomRef.current) return;
+
+    const socket = useSocketStore.getState().socket;
+    if (!socket) return;
+
+    const code = roomCode.toUpperCase();
+    const onReconnectFailed = (data: { roomCode: string }) => {
+      if (data.roomCode.toUpperCase() !== code) return;
+      socket.emit("JOIN_ROOM", { roomCode: code });
+    };
+    socket.once("RECONNECT_FAILED", onReconnectFailed);
+    socket.emit("RECONNECT_ROOM", { roomCode: code });
+
+    return () => {
+      socket.off("RECONNECT_FAILED", onReconnectFailed);
+    };
+  }, [mounted, isConnected, roomCode]);
 
   if (!mounted) {
     return (

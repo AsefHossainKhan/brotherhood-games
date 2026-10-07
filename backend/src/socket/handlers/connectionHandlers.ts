@@ -8,19 +8,35 @@ import { GameRuntime } from '@brotherhood/game-engine';
 export function handleConnectionEvents(io: Server, socket: Socket, runtime: GameRuntime) {
   const guestId = socket.data.guestId as string;
 
-  // Attempt reconnection on connect
-  const room = runtime.handleReconnect(guestId, socket.id);
-  if (room) {
-    socket.join(room.id);
-    socket.emit('PLAYER_RECONNECTED', { playerId: guestId });
-    socket.to(room.id).emit('PLAYER_RECONNECTED', { playerId: guestId });
+  // RECONNECT_ROOM — SPEC: spec-95c801. The guestId comes from the handshake
+  // auth, the roomCode from the event; the runtime validates the reservation.
+  socket.on('RECONNECT_ROOM', (data: { roomCode?: string }) => {
+    const roomCode = data?.roomCode ?? '';
+    const result = runtime.handleReconnect(guestId, roomCode, socket.id);
+    if (!result.ok) {
+      socket.emit('RECONNECT_FAILED', { roomCode, reason: result.reason });
+      return;
+    }
 
-    // Send current state
+    // The old socket for this guest is dead weight now; drop it so it stops
+    // receiving the room's events.
+    if (result.supersededSocketId) {
+      io.in(result.supersededSocketId).disconnectSockets(true);
+    }
+
+    const { room } = result;
+    socket.join(room.id);
+
+    // Restore the seat (room) and the hand (personalised game state)
+    socket.emit('ROOM_UPDATED', { room: room.toJSON() });
     const visibleState = runtime.getVisibleState(guestId);
     if (visibleState) {
       socket.emit('GAME_STATE_UPDATED', visibleState);
     }
-  }
+
+    // Everyone else sees the seat as connected again
+    socket.to(room.id).emit('ROOM_UPDATED', { room: room.toJSON() });
+  });
 
   // PING/PONG
   socket.on('PING', () => {
