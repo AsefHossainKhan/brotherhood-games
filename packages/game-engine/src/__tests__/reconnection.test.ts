@@ -12,22 +12,32 @@ const GAME = "reconnect-test" as GameType;
 
 interface StubState {
   hands: Record<string, string[]>;
+  done?: boolean;
 }
 
-/** Minimal engine: each player's visible state is their own hand. */
+/**
+ * Minimal engine: each player's visible state is their own hand. A FINISH
+ * action ends the match normally.
+ */
 const stubEngine: GameEngine<StubState> = {
   gameType: GAME,
   createInitialState: (playerIds) => ({
     hands: Object.fromEntries(playerIds.map((id) => [id, [`${id}-card`]])),
   }),
-  handleAction: (state) => ({ newState: state, broadcasts: [] }),
+  handleAction: (state, action) =>
+    action.type === "FINISH"
+      ? {
+          newState: { ...state, done: true },
+          broadcasts: [{ event: "GAME_FINISHED", payload: { winner: 0 } }],
+        }
+      : { newState: state, broadcasts: [] },
   validateAction: () => ({ valid: true }),
   getVisibleState: (state, playerId, role) => ({
     role,
     hand: role === "player" ? state.hands[playerId] : [],
   }),
   getPhase: () => "PLAYING",
-  isComplete: () => false,
+  isComplete: (state) => !!state.done,
   getCurrentPlayer: () => null,
 };
 
@@ -219,6 +229,39 @@ describe("GameRuntime reconnection and forfeit", () => {
     const finished = log.filter((e) => e.event === "GAME_FINISHED");
     expect(finished).toHaveLength(1);
     expect(finished[0].payload.forfeitedPlayerId).toBe("p1");
+  });
+
+  it("a match that ends normally clears its reservations, so no forfeit follows", () => {
+    const room = startedGame(runtime);
+    runtime.handleDisconnect("s1");
+
+    runtime.handleGameAction("p0", "FINISH", {});
+    expect(room.status).toBe("finished");
+
+    vi.advanceTimersByTime(RECONNECT_TIMEOUT_MS + 1);
+
+    const finished = log.filter((e) => e.event === "GAME_FINISHED");
+    expect(finished).toHaveLength(1);
+    expect(finished[0].payload).toEqual({ winner: 0 });
+    // The finished room is not torn down by a stale timer
+    expect(runtime.getRoom(room.id)).toBe(room);
+    // Nothing is left to redeem
+    expect(runtime.handleReconnect("p1", room.code, "s1b")).toEqual({
+      ok: false,
+      reason: "NO_RESERVATION",
+    });
+  });
+
+  it("a reservation expiring after its room has finished does nothing", () => {
+    const room = startedGame(runtime);
+    runtime.handleDisconnect("s1");
+
+    // The room finishes by a path that does not release reservations
+    room.status = "finished";
+    vi.advanceTimersByTime(RECONNECT_TIMEOUT_MS + 1);
+
+    expect(log.some((e) => e.event === "GAME_FINISHED")).toBe(false);
+    expect(runtime.getRoom(room.id)).toBe(room);
   });
 
   it("a disconnected spectator never forfeits the match", () => {

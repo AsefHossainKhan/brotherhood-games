@@ -8,8 +8,9 @@ import { GameRuntime } from '@brotherhood/game-engine';
 export function handleConnectionEvents(io: Server, socket: Socket, runtime: GameRuntime) {
   const guestId = socket.data.guestId as string;
 
-  // RECONNECT_ROOM — SPEC: spec-95c801. The guestId comes from the handshake
-  // auth, the roomCode from the event; the runtime validates the reservation.
+  // RECONNECT_ROOM — SPEC: spec-95c801. The guestId is derived from the
+  // handshake guestToken, never taken from the event; the roomCode comes from
+  // the event and the runtime validates the reservation.
   socket.on('RECONNECT_ROOM', (data: { roomCode?: string }) => {
     const roomCode = data?.roomCode ?? '';
     const result = runtime.handleReconnect(guestId, roomCode, socket.id);
