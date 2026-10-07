@@ -84,7 +84,11 @@ Declarer chooses:
 3. Joker (No Trump)
 
 ## Standard Trump
-Trump suit immediately known.
+
+- Declarer selects a normal suit
+- Only declarer is told the suit
+- Other players learn only that a suit trump was chosen
+- Hidden until reveal
 
 ## Seventh Card Trump
 
