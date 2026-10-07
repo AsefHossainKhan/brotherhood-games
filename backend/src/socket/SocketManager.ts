@@ -7,6 +7,7 @@ import { TwentyNineEngine } from '@brotherhood/twenty-nine';
 import { handleRoomEvents } from './handlers/roomHandlers.js';
 import { handleGameEvents } from './handlers/gameHandlers.js';
 import { handleConnectionEvents } from './handlers/connectionHandlers.js';
+import { derivePlayerId, isValidGuestToken } from './guestIdentity.js';
 
 /** Socket.IO emitter adapter for the GameRuntime */
 const createEmitter = (io: Server): RuntimeEmitter => ({
@@ -49,16 +50,18 @@ export function setupSocketManager(httpServer: HttpServer): Server {
   const emitter = createEmitter(io);
   const runtime = new GameRuntime(emitter);
 
-  // Socket.IO middleware: extract guest identity
+  // Socket.IO middleware: prove the guest's identity. SPEC: spec-b5759c —
+  // every handler reads socket.data.guestId, the public player id derived
+  // from the secret guestToken; the token itself goes no further than here.
   io.use((socket, next) => {
-    const guestId = socket.handshake.auth.guestId as string | undefined;
+    const guestToken = socket.handshake.auth.guestToken as unknown;
     const username = socket.handshake.auth.username as string | undefined;
 
-    if (!guestId) {
-      return next(new Error('Missing guestId'));
+    if (!isValidGuestToken(guestToken)) {
+      return next(new Error('Missing guestToken'));
     }
 
-    // Attach identity to socket data
+    const guestId = derivePlayerId(guestToken);
     socket.data.guestId = guestId;
     socket.data.username = username ?? `Guest_${guestId.slice(0, 6)}`;
     next();
@@ -67,6 +70,9 @@ export function setupSocketManager(httpServer: HttpServer): Server {
   // Connection handler
   io.on('connection', (socket: Socket) => {
     console.log(`Client connected: ${socket.id} (guest: ${socket.data.guestId})`);
+
+    // Tell the client which public id is its own
+    socket.emit('SESSION_READY', { playerId: socket.data.guestId });
 
     // Advertise server capabilities so the client can gate features (e.g. bots)
     socket.emit('SERVER_CONFIG', { allowBots: config.allowBots });

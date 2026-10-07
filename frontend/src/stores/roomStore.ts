@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { useSocketStore } from './socketStore';
 
 interface RoomPlayer {
   id: string;
@@ -59,10 +60,7 @@ export const useRoomStore = create<RoomState>((set, get) => ({
   isHost: false,
 
   setRoom: (room: any) => {
-    const guestId =
-      typeof window !== 'undefined'
-        ? localStorage.getItem('brotherhood_guest_id')
-        : null;
+    const guestId = useSocketStore.getState().guestId || null;
 
     const myPlayer = room.players?.find((p: any) => p.userId === guestId);
 

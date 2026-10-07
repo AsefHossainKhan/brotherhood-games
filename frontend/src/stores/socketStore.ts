@@ -6,24 +6,30 @@ import { io, Socket } from 'socket.io-client';
 interface SocketState {
   socket: Socket | null;
   isConnected: boolean;
+  /** This client's public player id, as the server reports it in SESSION_READY. */
   guestId: string;
   username: string;
   allowBots: boolean;
-  connect: (guestId: string, username: string) => void;
+  connect: (guestToken: string, username: string) => void;
   disconnect: () => void;
   updateUsername: (username: string) => void;
   setAllowBots: (allowBots: boolean) => void;
 }
 
-/** Generate or retrieve guestId from localStorage */
-function getOrCreateGuestId(): string {
+/**
+ * Generate or retrieve the secret guestToken from localStorage. It goes only
+ * in the socket handshake; the server derives the public id from it.
+ */
+function getOrCreateGuestToken(): string {
   if (typeof window === 'undefined') return '';
-  let guestId = localStorage.getItem('brotherhood_guest_id');
-  if (!guestId) {
-    guestId = crypto.randomUUID();
-    localStorage.setItem('brotherhood_guest_id', guestId);
+  let guestToken = localStorage.getItem('brotherhood_guest_token');
+  if (!guestToken) {
+    guestToken = crypto.randomUUID();
+    localStorage.setItem('brotherhood_guest_token', guestToken);
   }
-  return guestId;
+  // The old guest id was public, so it is never reused as a secret
+  localStorage.removeItem('brotherhood_guest_id');
+  return guestToken;
 }
 
 function getOrCreateUsername(): string {
@@ -43,14 +49,14 @@ export const useSocketStore = create<SocketState>((set, get) => ({
   username: '',
   allowBots: false,
 
-  connect: (guestId: string, username: string) => {
+  connect: (guestToken: string, username: string) => {
     const existing = get().socket;
     if (existing?.connected) return;
 
     const socketUrl = process.env.NEXT_PUBLIC_WS_URL ||
       (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
     const socket = io(socketUrl, {
-      auth: { guestId, username },
+      auth: { guestToken, username },
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
@@ -58,6 +64,10 @@ export const useSocketStore = create<SocketState>((set, get) => ({
 
     socket.on('connect', () => {
       set({ isConnected: true });
+    });
+
+    socket.on('SESSION_READY', (data: { playerId: string }) => {
+      set({ guestId: data.playerId });
     });
 
     socket.on('SERVER_CONFIG', (data: { allowBots?: boolean }) => {
@@ -68,7 +78,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
       set({ isConnected: false });
     });
 
-    set({ socket, guestId, username });
+    set({ socket, username });
   },
 
   disconnect: () => {
@@ -95,7 +105,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
 
 /** Initialize socket connection (call once on app mount) */
 export function initSocket() {
-  const guestId = getOrCreateGuestId();
+  const guestToken = getOrCreateGuestToken();
   const username = getOrCreateUsername();
-  useSocketStore.getState().connect(guestId, username);
+  useSocketStore.getState().connect(guestToken, username);
 }

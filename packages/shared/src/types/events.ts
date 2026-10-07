@@ -27,7 +27,7 @@ export interface ClientEvents {
   REQUEST_TRUMP_REVEAL: Record<string, never>;
 
   // Connectivity
-  /** Reclaim a reserved seat; the guestId travels in the handshake auth. */
+  /** Reclaim a reserved seat; identity comes from the handshake guestToken. */
   RECONNECT_ROOM: { roomCode: string };
   PING: Record<string, never>;
 }
@@ -35,6 +35,10 @@ export interface ClientEvents {
 // ---- Server → Client Events ----
 
 export interface ServerEvents {
+  // Session
+  /** The socket's own public player id, derived from its guestToken. */
+  SESSION_READY: { playerId: string };
+
   // Room
   ROOM_CREATED: { roomId: string; roomCode: string };
   ROOM_UPDATED: { room: import('./room').RoomState };

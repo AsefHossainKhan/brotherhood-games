@@ -312,7 +312,7 @@ export class GameRuntime {
 
     // Check if game is complete
     if (engine.isComplete(result.newState)) {
-      room.status = "finished";
+      this.finishMatch(room);
     } else {
       // Advance any bots whose turn is now pending. If this action ended a
       // trick or the auction, give players a moment to see it first.
@@ -514,7 +514,7 @@ export class GameRuntime {
       this.broadcastVisibleState(room);
 
       if (engine.isComplete(result.newState)) {
-        room.status = "finished";
+        this.finishMatch(room);
         return;
       }
 
@@ -587,6 +587,25 @@ export class GameRuntime {
     }
   }
 
+  /**
+   * SPEC: spec-bc6000 — a match that ends normally releases every seat
+   * reservation in its room, so no reconnect timer can forfeit it afterwards.
+   */
+  private finishMatch(room: Room): void {
+    room.status = "finished";
+    this.clearReservations(room.id);
+  }
+
+  /** Cancel every reconnect reservation (and its timer) held in a room. */
+  private clearReservations(roomId: string): void {
+    for (const [userId, reservation] of this.reservations.entries()) {
+      if (reservation.roomId === roomId) {
+        clearTimeout(reservation.timeout);
+        this.reservations.delete(userId);
+      }
+    }
+  }
+
   /** Handle reconnect timeout (forfeit). */
   private handleReconnectTimeout(userId: string): void {
     const reservation = this.reservations.get(userId);
@@ -594,8 +613,10 @@ export class GameRuntime {
 
     this.reservations.delete(userId);
 
+    // SPEC: spec-bc6000 — only a match still being played can be forfeited;
+    // a finished or removed room keeps its result.
     const room = this.rooms.get(reservation.roomId);
-    if (!room) return;
+    if (!room || room.status !== "playing") return;
 
     const username = room.players.get(userId)?.username ?? "Unknown player";
     this.forfeitMatch(room, userId, `${username} failed to reconnect`);
@@ -625,13 +646,7 @@ export class GameRuntime {
     const room = this.rooms.get(roomId);
     if (!room) return;
 
-    // Clear any reservations for this room
-    for (const [userId, reservation] of this.reservations.entries()) {
-      if (reservation.roomId === roomId) {
-        clearTimeout(reservation.timeout);
-        this.reservations.delete(userId);
-      }
-    }
+    this.clearReservations(roomId);
 
     // Nobody is in a room that no longer exists
     for (const [userId, conn] of this.connections.entries()) {

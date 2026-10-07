@@ -28,10 +28,11 @@ export const test = base.extend<GameFixtures>({
       const context = await browser.newContext();
       const page = await context.newPage();
 
-      // Inject unique guestId before any page loads
+      // Inject a unique guestToken before any page loads
       await page.addInitScript(() => {
-        const id = crypto.randomUUID();
-        localStorage.setItem('brotherhood_guest_id', id);
+        if (!localStorage.getItem('brotherhood_guest_token')) {
+          localStorage.setItem('brotherhood_guest_token', crypto.randomUUID());
+        }
       });
 
       contexts.push({ context, page, username });
