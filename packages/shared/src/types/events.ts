@@ -27,6 +27,8 @@ export interface ClientEvents {
   REQUEST_TRUMP_REVEAL: Record<string, never>;
 
   // Connectivity
+  /** Reclaim a reserved seat; the guestId travels in the handshake auth. */
+  RECONNECT_ROOM: { roomCode: string };
   PING: Record<string, never>;
 }
 
@@ -77,11 +79,19 @@ export interface ServerEvents {
     team2Sets: number;
     bidResult: 'success' | 'fail';
   };
-  GAME_FINISHED: { winner: 'team1' | 'team2' | 'forfeit'; reason: string; forfeitedPlayerId?: string };
+  GAME_FINISHED: {
+    winner: 'team1' | 'team2' | 'forfeit';
+    reason: string;
+    forfeitedPlayerId?: string;
+    /** On a forfeit: the team (0 | 1) that forfeited, and the other team. */
+    forfeitedTeam?: 0 | 1 | null;
+    winningTeam?: 0 | 1 | null;
+  };
 
   // Connection
   PLAYER_DISCONNECTED: { playerId: string; timeout: number };
   PLAYER_RECONNECTED: { playerId: string };
+  RECONNECT_FAILED: { roomCode: string; reason: 'ROOM_NOT_FOUND' | 'NO_RESERVATION' };
   ERROR: { code: string; message: string };
 
   // Generic
