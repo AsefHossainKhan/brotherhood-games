@@ -49,6 +49,12 @@ export interface TrumpInfo {
   mustPlayTrump: boolean; // true only for the turn immediately after reveal
 }
 
+/**
+ * The trump mode as someone other than the declarer sees it before the reveal:
+ * a suit trump and a Joker both show as "hidden", seventh-card is announced.
+ */
+export type PublicTrumpType = TrumpType | 'hidden';
+
 // ---- Double Phase ----
 
 export type DoubleLevel = 'normal' | 'double' | 'redouble' | 'fullset';

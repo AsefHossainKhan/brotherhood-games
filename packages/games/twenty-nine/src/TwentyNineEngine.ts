@@ -26,6 +26,7 @@ import {
   revealTrump,
   canRevealTrump,
   shouldCancelForHiddenTrump,
+  publicTrumpType,
 } from "./logic/trump";
 import { detectMarriage, calculateEffectiveBid } from "./logic/marriage";
 import {
@@ -290,12 +291,14 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       })),
       bidding: state.bidding,
       trump: {
-        // The trump MODE is public to players (it is already announced to the
-        // whole room via TRUMP_SELECTED). Non-declarer players need it so the
-        // "reveal hidden trump" option is reachable in the UI. Spectators only
-        // learn the mode once it is revealed.
-        type:
-          role === "player" || state.trump.isRevealed ? state.trump.type : null,
+        // SPEC: spec-5f372d — before the reveal, everyone but the declarer
+        // (players and spectators alike) learns only that seventh-card was
+        // chosen, or that some other trump was: suit and Joker read "hidden".
+        type: publicTrumpType(
+          state.trump.type,
+          state.trump.isRevealed,
+          isDeclarer,
+        ),
         // Hide the actual SUIT from everyone except the declarer until revealed.
         // For joker (no trump), suit is always null.
         suit:
@@ -831,9 +834,11 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       targetPlayerIds: [playerId],
     });
 
+    // SPEC: spec-5f372d — the room learns only that a trump other than
+    // seventh-card was chosen; a Joker announces exactly the same.
     broadcasts.push({
       event: "TRUMP_SELECTED",
-      payload: { type: "suit" },
+      payload: { type: "hidden" },
     });
 
     return this.proceedToSecondDeal(state, broadcasts);
@@ -888,9 +893,17 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       mustPlayTrump: false,
     };
 
+    // Tell the declarer the actual choice (private info)
+    broadcasts.push({
+      event: "TRUMP_HIDDEN",
+      payload: { suit: null, type: "joker" },
+      targetPlayerIds: [playerId],
+    });
+
+    // SPEC: spec-5f372d — indistinguishable from a suit trump to the room.
     broadcasts.push({
       event: "TRUMP_SELECTED",
-      payload: { type: "joker" },
+      payload: { type: "hidden" },
     });
 
     return this.proceedToSecondDeal(state, broadcasts);
@@ -1004,35 +1017,9 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       });
     }
 
-    // Check for marriage with normal suit trump (already revealed)
-    // For seventh-card trump, marriage will be checked on reveal
-    // For joker, marriage is disabled
-    if (state.trump.type === "suit" && state.trump.suit) {
-      for (const player of state.players) {
-        const marriageSuit = detectMarriage(player.hand, state.trump.suit);
-        if (marriageSuit) {
-          const declarer = state.players.find((p) => p.isDeclarer)!;
-          // Only the first player found with marriage counts (typically the holder)
-          // Marriage on the bidding team lowers effective bid; on defending team raises it
-          const effectiveBid = calculateEffectiveBid(
-            state.bidding.currentBid!,
-            player.team,
-            declarer.team,
-          );
-          state.marriage = {
-            team: player.team,
-            suit: marriageSuit,
-            effectiveBid,
-            playerId: player.id,
-          };
-          broadcasts.push({
-            event: "MARRIAGE_DECLARED",
-            payload: { playerId: player.id, suit: marriageSuit, effectiveBid },
-          });
-          break; // Only one marriage can be declared
-        }
-      }
-    }
+    // No marriage here: under every trump mode a marriage is made known only
+    // when the trump is revealed (DEC-3), so it is checked in handleTrumpReveal.
+    // Declaring it now would tell the room the hidden trump suit.
 
     // Proceed to double phase
     state.phase = GAME_PHASES.DOUBLE_PHASE;
@@ -1397,9 +1384,13 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
       }
     }
 
+    // SPEC: spec-5f372d — the reveal tells everyone the mode: a suit (with the
+    // seventh card as proof under seventh-card trump), or no trump for a Joker.
     broadcasts.push({
       event: "TRUMP_REVEALED",
       payload: {
+        type: state.trump.type,
+        noTrump: state.trump.type === "joker",
         suit: state.trump.suit,
         playerId,
         // For seventh-card mode, include the actual card so everyone can see it
@@ -1938,6 +1929,8 @@ export class TwentyNineEngine implements GameEngine<TwentyNineState> {
     return { valid: true };
   }
 
+  // SPEC: spec-5f372d — any player may reveal, under any trump mode, only on
+  // their turn in play, when not leading and holding no card of the led suit.
   private validateTrumpReveal(
     state: TwentyNineState,
     playerId: string,

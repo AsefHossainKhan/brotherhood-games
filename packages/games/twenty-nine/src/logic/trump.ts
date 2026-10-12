@@ -1,5 +1,6 @@
-import type { Card, Suit } from "@brotherhood/shared";
+import type { Card, Suit, TrumpType } from "@brotherhood/shared";
 import { RANK_ORDER_29 } from "@brotherhood/shared";
+import type { PublicTrumpType } from "../types";
 
 /**
  * Select the trump suit normally.
@@ -65,6 +66,21 @@ export function revealTrump(
 export function canRevealTrump(hand: Card[], trumpSuit: Suit | null): boolean {
   if (!trumpSuit) return false;
   return hand.some((c) => c.suit === trumpSuit);
+}
+
+/**
+ * SPEC: spec-5f372d — the trump mode a viewer may see. The declarer, and
+ * everyone once the trump is revealed, sees the real mode. Before the reveal
+ * everyone else is told only that seventh-card was chosen, or that some other
+ * trump was: a suit trump and a Joker look identical ("hidden").
+ */
+export function publicTrumpType(
+  trumpType: TrumpType | null,
+  isRevealed: boolean,
+  isDeclarer: boolean,
+): PublicTrumpType | null {
+  if (!trumpType || isRevealed || isDeclarer) return trumpType;
+  return trumpType === "seventh-card" ? "seventh-card" : "hidden";
 }
 
 /**
