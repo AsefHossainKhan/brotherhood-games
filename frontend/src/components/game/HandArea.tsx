@@ -237,13 +237,14 @@ export function HandArea({ cards }: HandAreaProps) {
   // I hold no card of the led suit and the trump is still hidden. I may choose
   // to reveal the trump (which then obliges me to play trump this turn) or keep
   // it hidden and play any card. Reveal is an explicit action — never automatic.
+  // SPEC: spec-5f372d — open under every mode, Joker included (its reveal
+  // announces no trump).
   const canRevealTrump =
     canPlay &&
     !!leadSuit &&
     !cards.some((c) => c.suit === leadSuit) &&
     !trump.isRevealed &&
-    !!trump.type &&
-    trump.type !== "joker";
+    !!trump.type;
 
   const scale = useUiScale();
   const cardH = Math.round(92 * scale);
@@ -372,7 +373,8 @@ export function HandArea({ cards }: HandAreaProps) {
         </div>
       )}
       {/* Void in the led suit with a hidden trump → offer an explicit reveal.
-          Revealing obliges the player to play a trump card this turn. */}
+          Revealing a suit obliges the player to play a trump card this turn,
+          if they hold one; revealing a Joker leaves them free. */}
       {canRevealTrump && (
         <div
           data-testid="trump-reveal-panel"

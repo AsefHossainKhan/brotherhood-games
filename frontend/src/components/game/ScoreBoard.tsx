@@ -58,7 +58,7 @@ export function ScoreBoard() {
           <span className="h-4 w-px bg-white/10" />
           <span className="text-[10px] text-white/40">Trump</span>
           <span className="text-sm font-semibold text-green-400">
-            {trump.isRevealed ? "No Trump" : "Hidden"}
+            {trump.isRevealed ? "No Trump" : "No Trump · hidden"}
           </span>
         </>
       )}

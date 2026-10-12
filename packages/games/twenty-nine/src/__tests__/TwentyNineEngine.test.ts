@@ -1279,7 +1279,37 @@ describe("TwentyNineEngine — Full Game Flow", () => {
   // ========== MARRIAGE ==========
 
   describe("MARRIAGE", () => {
-    it("detects marriage with normal suit trump during second deal", () => {
+    // DEC-3: a marriage is made known only when the trump is revealed. Put the
+    // hand in play with `leadSuit` led by another seat, and let `revealerId`
+    // (who must hold no card of that suit) reveal.
+    function revealInPlay(
+      s: TwentyNineState,
+      revealerId: string,
+      leadSuit: Suit,
+    ): ActionResult<TwentyNineState> {
+      const revealer = s.players.find((p) => p.id === revealerId)!;
+      const leaderSeat = (revealer.seat + 3) % 4;
+      s.phase = GAME_PHASES.PLAYING;
+      s.leadSuit = leadSuit;
+      s.currentTrick = {
+        plays: [
+          {
+            playerId: PLAYER_IDS[leaderSeat],
+            card: { suit: leadSuit, rank: "7" } as Card,
+            cardIndex: 0,
+          },
+        ],
+        leadSuit,
+        winnerId: null,
+        trickNumber: 1,
+      };
+      s.currentTurn = revealer.seat;
+      const action_ = action("REQUEST_TRUMP_REVEAL", revealerId);
+      expect(engine.validateAction(s, action_).valid).toBe(true);
+      return engine.handleAction(s, action_);
+    }
+
+    it("suit trump: marriage is not declared at the deal, only at the reveal", () => {
       // Create hands where one player has K+Q of trump suit
       const hands: Card[][] = [
         // p0 (declarer, team 0): has K+Q of hearts (trump)
@@ -1362,9 +1392,22 @@ describe("TwentyNineEngine — Full Game Flow", () => {
         state,
         action("SELECT_TRUMP", "p0", { suit: "hearts" }),
       );
-      const s = result.newState;
+      let s = result.newState;
 
-      // Marriage should be detected: p0 has K+Q of hearts
+      // p0 holds K+Q of hearts, but nothing is declared while the trump is
+      // hidden: a declaration would tell the room the trump suit.
+      expect(s.marriage).toBeNull();
+      expect(
+        result.broadcasts.some((b) => b.event === "MARRIAGE_DECLARED"),
+      ).toBe(false);
+
+      // p1 (all spades) is void in diamonds and reveals: now it is declared
+      const revealed = revealInPlay(s, "p1", "diamonds");
+      s = revealed.newState;
+      expect(
+        revealed.broadcasts.find((b) => b.event === "MARRIAGE_DECLARED")
+          ?.payload,
+      ).toEqual({ playerId: "p0", suit: "hearts", effectiveBid: 16 });
       expect(s.marriage).not.toBeNull();
       expect(s.marriage!.team).toBe(0);
       expect(s.marriage!.suit).toBe("hearts");
@@ -1425,9 +1468,14 @@ describe("TwentyNineEngine — Full Game Flow", () => {
         state,
         action("SELECT_TRUMP", "p0", { suit: "hearts" }),
       );
-      const s = result.newState;
+      let s = result.newState;
+      expect(s.marriage).toBeNull();
+
+      // p1 holds no diamonds and reveals the hearts trump
+      s = revealInPlay(s, "p1", "diamonds").newState;
 
       expect(s.marriage).not.toBeNull();
+      expect(s.marriage!.playerId).toBe("p1");
       expect(s.marriage!.team).toBe(1); // Defending team
       // Effective bid: marriage on defending team → min(28, 20+4) = 24
       expect(s.marriage!.effectiveBid).toBe(24);
@@ -1515,8 +1563,11 @@ describe("TwentyNineEngine — Full Game Flow", () => {
       expect(s.phase).toBe(GAME_PHASES.PLAYING);
 
       // p1 can't follow suit → trigger reveal
-      // Give p1 cards without the led suit
-      const ledSuit = s.leadSuit || "diamonds";
+      // Give p1 cards without the led suit. The K and Q of trump move to p1:
+      // no one else may still hold them, or the deck would hold two of each.
+      const isTrumpKQ = (c: Card) =>
+        c.suit === trumpSuit && (c.rank === "K" || c.rank === "Q");
+      for (const p of s.players) p.hand = p.hand.filter((c) => !isTrumpKQ(c));
       s.players[1].hand = [
         { suit: trumpSuit, rank: "K" },
         { suit: trumpSuit, rank: "Q" },
@@ -1544,49 +1595,80 @@ describe("TwentyNineEngine — Full Game Flow", () => {
       expect(s.marriage!.effectiveBid).toBe(expectedEffectiveBid);
     });
 
-    it("detects marriage for first player found when multiple have marriage", () => {
-      // Setup: suit trump mode, both p0 and p1 have marriage
+    it("no marriage at the reveal if the King or Queen was already played", () => {
       const state = createGame(engine);
       let s = startGame(engine, state);
-
-      // Complete bidding
-      const bidderId = PLAYER_IDS[s.currentTurn];
-      s = engine.handleAction(
+      s = completeBidding(
+        engine,
         s,
-        action("PLACE_BID", bidderId, { bid: 20 }),
-      ).newState;
-      let safety = 10;
-      while (s.phase === GAME_PHASES.BIDDING && safety-- > 0) {
-        const pid = PLAYER_IDS[s.currentTurn];
-        if (pid === bidderId) break;
-        s = engine.handleAction(s, action("PASS_BID", pid)).newState;
-      }
+        "p0",
+        20,
+        action("SELECT_TRUMP", "p0", { suit: "hearts" }),
+      );
+      s = skipDoublePhase(engine, s);
 
-      const declarer = s.players.find((p) => p.isDeclarer)!;
-      const trumpSuit = "hearts";
-
-      // Set up deck so both p0 and p1 get K+Q of hearts
-      s.deck = [
-        { suit: trumpSuit, rank: "K" }, // → p0
-        { suit: "spades", rank: "K" }, // → p1
-        { suit: "diamonds", rank: "K" }, // → p2
-        { suit: "clubs", rank: "K" }, // → p3
-        { suit: trumpSuit, rank: "Q" }, // → p0
-        { suit: "spades", rank: "Q" }, // → p1
-        { suit: "diamonds", rank: "Q" }, // → p2
-        { suit: "clubs", rank: "Q" }, // → p3
+      // p0 held K+Q of hearts but has already played the Queen
+      s.players[0].hand = [
+        { suit: "hearts", rank: "K" } as Card,
+        { suit: "spades", rank: "J" } as Card,
       ];
+      s.players[1].hand = [{ suit: "clubs", rank: "A" } as Card];
+      s.players[2].hand = [{ suit: "clubs", rank: "J" } as Card];
+      s.players[3].hand = [{ suit: "spades", rank: "9" } as Card];
 
-      // Select suit trump
-      s = engine.handleAction(
+      const result = revealInPlay(s, "p1", "diamonds");
+      expect(result.newState.marriage).toBeNull();
+      expect(
+        result.broadcasts.some((b) => b.event === "MARRIAGE_DECLARED"),
+      ).toBe(false);
+    });
+
+    it("marriage on the declaring team never lowers the target below 16", () => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(
+        engine,
         s,
-        action("SELECT_TRUMP", declarer.id, { suit: trumpSuit }),
-      ).newState;
+        "p0",
+        17,
+        action("SELECT_TRUMP", "p0", { suit: "hearts" }),
+      );
+      s = skipDoublePhase(engine, s);
+      s.players[0].hand = [
+        { suit: "hearts", rank: "K" } as Card,
+        { suit: "hearts", rank: "Q" } as Card,
+      ];
+      s.players[1].hand = [{ suit: "clubs", rank: "A" } as Card];
+      s.players[2].hand = [{ suit: "clubs", rank: "J" } as Card];
+      s.players[3].hand = [{ suit: "spades", rank: "9" } as Card];
 
-      // Marriage should be detected for the first player found (p0)
-      expect(s.marriage).not.toBeNull();
-      expect(s.marriage!.playerId).toBe("p0");
-      expect(s.marriage!.suit).toBe(trumpSuit);
+      s = revealInPlay(s, "p1", "diamonds").newState;
+      expect(s.marriage!.team).toBe(0);
+      expect(s.marriage!.effectiveBid).toBe(16);
+    });
+
+    it("marriage on the opposing team never raises the target above 28", () => {
+      const state = createGame(engine);
+      let s = startGame(engine, state);
+      s = completeBidding(
+        engine,
+        s,
+        "p0",
+        26,
+        action("SELECT_TRUMP", "p0", { suit: "hearts" }),
+      );
+      s = skipDoublePhase(engine, s);
+      s.players[0].hand = [{ suit: "clubs", rank: "J" } as Card];
+      s.players[1].hand = [
+        { suit: "hearts", rank: "K" } as Card,
+        { suit: "hearts", rank: "Q" } as Card,
+      ];
+      s.players[2].hand = [{ suit: "clubs", rank: "A" } as Card];
+      s.players[3].hand = [{ suit: "spades", rank: "9" } as Card];
+
+      s = revealInPlay(s, "p1", "diamonds").newState;
+      expect(s.marriage!.team).toBe(1);
+      expect(s.marriage!.effectiveBid).toBe(28);
     });
   });
 
@@ -1949,16 +2031,16 @@ describe("TwentyNineEngine — Full Game Flow", () => {
       expect(declarerVisible.trump.suit).toBe("hearts");
       expect(declarerVisible.trump.isRevealed).toBe(false);
 
-      // Non-declarer does NOT see the trump suit, but DOES see the mode
+      // Non-declarer sees neither the suit nor the mode: only "hidden"
       const opponentVisible = engine.getVisibleState(s, "p1", "player") as any;
       expect(opponentVisible.trump.suit).toBeNull();
-      expect(opponentVisible.trump.type).toBe("suit");
+      expect(opponentVisible.trump.type).toBe("hidden");
       expect(opponentVisible.trump.isRevealed).toBe(false);
 
-      // Partner also does NOT see the trump suit
+      // Partner also does NOT see the trump suit or mode
       const partnerVisible = engine.getVisibleState(s, "p2", "player") as any;
       expect(partnerVisible.trump.suit).toBeNull();
-      expect(partnerVisible.trump.type).toBe("suit");
+      expect(partnerVisible.trump.type).toBe("hidden");
     });
 
     it("seventh-card trump is hidden from non-declarers until revealed", () => {
@@ -2004,9 +2086,9 @@ describe("TwentyNineEngine — Full Game Flow", () => {
       expect(declarerVisible.trump.type).toBe("joker");
       expect(declarerVisible.trump.suit).toBeNull();
 
-      // Non-declarer sees the mode (joker) but there is no suit to hide
+      // Non-declarer cannot tell a Joker from a suit trump: only "hidden"
       const opponentVisible = engine.getVisibleState(s, "p1", "player") as any;
-      expect(opponentVisible.trump.type).toBe("joker");
+      expect(opponentVisible.trump.type).toBe("hidden");
       expect(opponentVisible.trump.suit).toBeNull();
     });
 
@@ -2393,13 +2475,13 @@ describe("TwentyNineEngine — Full Game Flow", () => {
       );
       s = skipDoublePhase(engine, s);
 
-      // Spectator view — type and suit both hidden
+      // Spectator view — no more than a non-declarer player: mode and suit hidden
       const spectatorVisible = engine.getVisibleState(
         s,
         "spectator1",
         "spectator",
       ) as any;
-      expect(spectatorVisible.trump.type).toBeNull();
+      expect(spectatorVisible.trump.type).toBe("hidden");
       expect(spectatorVisible.trump.suit).toBeNull();
       expect(spectatorVisible.trump.isRevealed).toBe(false);
     });

@@ -6,6 +6,7 @@ import {
   revealTrump,
   canRevealTrump,
   shouldCancelForHiddenTrump,
+  publicTrumpType,
 } from "./trump";
 import type { Card, Suit } from "@brotherhood/shared";
 
@@ -110,5 +111,31 @@ describe("shouldCancelForHiddenTrump", () => {
 
   it("does not cancel a suit trump while tricks remain", () => {
     expect(shouldCancelForHiddenTrump("suit", false, 4, 8)).toBe(false);
+  });
+});
+
+describe("publicTrumpType", () => {
+  it("hides a suit trump and a Joker behind the same 'hidden' mode", () => {
+    expect(publicTrumpType("suit", false, false)).toBe("hidden");
+    expect(publicTrumpType("joker", false, false)).toBe("hidden");
+  });
+
+  it("announces seventh-card before the reveal", () => {
+    expect(publicTrumpType("seventh-card", false, false)).toBe("seventh-card");
+  });
+
+  it("shows the declarer the real mode", () => {
+    expect(publicTrumpType("suit", false, true)).toBe("suit");
+    expect(publicTrumpType("joker", false, true)).toBe("joker");
+  });
+
+  it("shows everyone the real mode once revealed", () => {
+    expect(publicTrumpType("suit", true, false)).toBe("suit");
+    expect(publicTrumpType("joker", true, false)).toBe("joker");
+    expect(publicTrumpType("seventh-card", true, false)).toBe("seventh-card");
+  });
+
+  it("is null when no trump was chosen", () => {
+    expect(publicTrumpType(null, false, false)).toBeNull();
   });
 });
